@@ -23,6 +23,8 @@ STANDARD_COLUMNS = [
     "pixel_spacing_y",
     "scanner_manufacturer",
     "image_path",
+    "finding_labels",
+    "follow_up",
 ]
 
 

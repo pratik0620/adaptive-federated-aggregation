@@ -111,43 +111,86 @@ def split_by_patient(
     train_size: float = 0.8,
     val_size: float = 0.1,
 ) -> dict[str, pd.DataFrame]:
-    """Split whole patients, optionally stratifying by their dominant target."""
+    """Split whole patients and whole studies, ensuring no patient or study leakage."""
     if not 0 < train_size < 1 or not 0 < val_size < 1 or train_size + val_size >= 1:
         raise ValueError("train_size and val_size must be positive and leave room for test")
-    patient_table = frame[["patient_id", "target"]].drop_duplicates("patient_id").copy()
-    patient_table["patient_id"] = patient_table["patient_id"].astype(str)
-    patient_table["patient_target"] = patient_table.groupby("patient_id")["target"].transform("mean") >= 0.5
-    stratify = patient_table["patient_target"] if patient_table["patient_target"].nunique() > 1 else None
+
+    df_copy = frame.copy()
+    patient_ids = df_copy["patient_id"].astype(str)
+
+    # If study_id exists, group patients that share any study to guarantee zero study leakage
+    if "study_id" in df_copy.columns and df_copy["study_id"].notna().any():
+        study_ids = df_copy["study_id"].dropna().astype(str)
+        parent = {}
+
+        def find(x):
+            parent.setdefault(x, x)
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+
+        def union(x, y):
+            rx, ry = find(x), find(y)
+            if rx != ry:
+                parent[rx] = ry
+
+        study_to_pts = {}
+        for p, s in zip(patient_ids, study_ids):
+            study_to_pts.setdefault(s, []).append(p)
+
+        for s, pts in study_to_pts.items():
+            first_p = pts[0]
+            for other_p in pts[1:]:
+                union(first_p, other_p)
+
+        group_col = patient_ids.map(find)
+    else:
+        group_col = patient_ids
+
+    df_copy["_split_group"] = group_col
+    dominant_target = df_copy.groupby("_split_group")["target"].mean() >= 0.5
+    group_table = pd.DataFrame({"_split_group": df_copy["_split_group"].unique()})
+    group_table["group_target"] = group_table["_split_group"].map(dominant_target)
+    stratify = group_table["group_target"] if group_table["group_target"].nunique() > 1 else None
+
     try:
-        train_patients, remainder = train_test_split(
-            patient_table["patient_id"], test_size=1 - train_size, random_state=seed, stratify=stratify
+        train_groups, remainder = train_test_split(
+            group_table["_split_group"], test_size=1 - train_size, random_state=seed, stratify=stratify
         )
     except ValueError:
-        train_patients, remainder = train_test_split(
-            patient_table["patient_id"], test_size=1 - train_size, random_state=seed
+        train_groups, remainder = train_test_split(
+            group_table["_split_group"], test_size=1 - train_size, random_state=seed
         )
-    remainder_table = patient_table[patient_table["patient_id"].isin(remainder)]
-    remainder_stratify = remainder_table["patient_target"] if remainder_table["patient_target"].nunique() > 1 else None
+
+    remainder_table = group_table[group_table["_split_group"].isin(remainder)]
+    remainder_stratify = remainder_table["group_target"] if remainder_table["group_target"].nunique() > 1 else None
     relative_val = val_size / (1 - train_size)
+
     try:
-        val_patients, test_patients = train_test_split(
-            remainder_table["patient_id"], test_size=1 - relative_val, random_state=seed, stratify=remainder_stratify
+        val_groups, test_groups = train_test_split(
+            remainder_table["_split_group"], test_size=1 - relative_val, random_state=seed, stratify=remainder_stratify
         )
     except ValueError:
-        val_patients, test_patients = train_test_split(
-            remainder_table["patient_id"], test_size=1 - relative_val, random_state=seed
+        val_groups, test_groups = train_test_split(
+            remainder_table["_split_group"], test_size=1 - relative_val, random_state=seed
         )
+
     assignments = {
-        "train": set(train_patients),
-        "val": set(val_patients),
-        "test": set(test_patients),
+        "train": set(train_groups),
+        "val": set(val_groups),
+        "test": set(test_groups),
     }
+
     assert assignments["train"].isdisjoint(assignments["val"])
     assert assignments["train"].isdisjoint(assignments["test"])
     assert assignments["val"].isdisjoint(assignments["test"])
+
     result = {}
-    for split, patients in assignments.items():
-        result[split] = frame[frame["patient_id"].astype(str).isin(patients)].copy().reset_index(drop=True)
+    for split, groups in assignments.items():
+        subset = df_copy[df_copy["_split_group"].isin(groups)].copy().reset_index(drop=True)
+        subset.drop(columns=["_split_group"], inplace=True, errors="ignore")
+        result[split] = subset
+
     return result
 
 
@@ -235,4 +278,7 @@ def ensure_standard_columns(frame: pd.DataFrame) -> pd.DataFrame:
     for column in STANDARD_COLUMNS:
         if column not in result.columns:
             result[column] = np.nan
-    return result
+    ordered_cols = [c for c in STANDARD_COLUMNS if c in result.columns] + [
+        c for c in result.columns if c not in STANDARD_COLUMNS
+    ]
+    return result[ordered_cols]

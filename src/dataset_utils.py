@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -102,12 +103,14 @@ def chexpert_patient_id(path_series: pd.Series) -> pd.Series:
     return path_series.astype(str).str.extract(r"(patient\d+)", expand=False)
 
 
-def standardize_chexpert(frame: pd.DataFrame, image_root) -> pd.DataFrame:
-    paths = frame["Path"].astype(str)
+def standardize_chexpert(frame: pd.DataFrame, image_root: Path | str | None = None) -> pd.DataFrame:
+    paths = frame["Path"].astype(str).str.replace("\\", "/", regex=False)
     result = pd.DataFrame(index=frame.index)
     result["image_id"] = paths
-    result["patient_id"] = chexpert_patient_id(paths)
-    result["study_id"] = paths.str.extract(r"(study\d+)", expand=False)
+    patient_ids = chexpert_patient_id(paths)
+    result["patient_id"] = patient_ids
+    studies = paths.str.extract(r"(study\d+)", expand=False)
+    result["study_id"] = patient_ids.astype(str) + "_" + studies.fillna("study1")
     result["source"] = "CheXpert"
     result["target"] = frame["target"]
     result["age"] = pd.to_numeric(frame.get("Age", np.nan), errors="coerce")
@@ -119,9 +122,16 @@ def standardize_chexpert(frame: pd.DataFrame, image_root) -> pd.DataFrame:
     result["pixel_spacing_x"] = np.nan
     result["pixel_spacing_y"] = np.nan
     result["scanner_manufacturer"] = np.nan
-    result["image_path"] = paths.map(lambda value: str(image_root / value))
-    result["path_original"] = paths
+    # Keep reproducible relative path with forward slashes; avoid machine-specific absolute prefixes
+    if image_root is not None and not Path(image_root).is_absolute():
+        rel_root = Path(image_root).as_posix()
+        result["image_path"] = paths.map(lambda value: f"{rel_root}/{value}")
+    else:
+        result["image_path"] = paths
+    result["finding_labels"] = np.nan
+    result["follow_up"] = np.nan
     return ensure_standard_columns(result)
+
 
 
 def padchest_find_label_vocabulary(frame: pd.DataFrame, labels_column: str = "Labels") -> list[str]:
@@ -130,7 +140,10 @@ def padchest_find_label_vocabulary(frame: pd.DataFrame, labels_column: str = "La
 
 
 def padchest_clean_binary_labels(
-    frame: pd.DataFrame, target_label: str, labels_column: str = "Labels", negative_label: str = "no finding"
+    frame: pd.DataFrame,
+    target_label: str = "Pleural Effusion",
+    labels_column: str = "Labels",
+    negative_label: str = "normal",
 ) -> tuple[pd.DataFrame, dict]:
     labels = frame[labels_column].map(parse_label_list)
     normalized_target = normalize_label(target_label)
@@ -147,25 +160,59 @@ def padchest_clean_binary_labels(
     }
 
 
-def standardize_padchest(frame: pd.DataFrame, image_dir) -> pd.DataFrame:
+def standardize_padchest(frame: pd.DataFrame, image_dir: Path | str | None = None) -> pd.DataFrame:
     result = pd.DataFrame(index=frame.index)
-    result["image_id"] = frame["ImageID"]
-    result["patient_id"] = frame.get("PatientID", np.nan)
-    result["study_id"] = frame.get("StudyID", np.nan)
+    result["image_id"] = frame["ImageID"].astype(str)
+    result["patient_id"] = frame.get("PatientID", np.nan).astype(str)
+    result["study_id"] = frame.get("StudyID", np.nan).astype(str)
     result["source"] = "PadChest"
     result["target"] = frame["target"]
-    result["age"] = pd.to_numeric(first_existing_column(frame, ["PatientAge", "PatientAge_DICOM"]), errors="coerce")
+
+    if "PatientAge" in frame.columns:
+        age = pd.to_numeric(frame["PatientAge"], errors="coerce")
+    elif "PatientAge_DICOM" in frame.columns:
+        age = pd.to_numeric(frame["PatientAge_DICOM"], errors="coerce")
+    elif "PatientBirth" in frame.columns and "StudyDate_DICOM" in frame.columns:
+        study_year = pd.to_numeric(frame["StudyDate_DICOM"].astype(str).str[:4], errors="coerce")
+        birth_year = pd.to_numeric(frame["PatientBirth"], errors="coerce")
+        age = study_year - birth_year
+    else:
+        age = np.nan
+    result["age"] = age
+
     result["sex"] = first_existing_column(frame, ["PatientSex_DICOM", "PatientSex"])
     result["view_position"] = first_existing_column(frame, ["ViewPosition_DICOM", "ViewPosition"])
-    result["projection"] = frame.get("Projection", np.nan)
+    result["projection"] = first_existing_column(frame, ["Projection"])
     result["image_width"] = pd.to_numeric(first_existing_column(frame, ["Columns_DICOM", "Columns"]), errors="coerce")
     result["image_height"] = pd.to_numeric(first_existing_column(frame, ["Rows_DICOM", "Rows"]), errors="coerce")
+
     spacing = first_existing_column(frame, ["PixelSpacing_DICOM", "PixelSpacing"]).map(parse_pixel_spacing)
     result["pixel_spacing_x"] = spacing.map(lambda value: value[0])
     result["pixel_spacing_y"] = spacing.map(lambda value: value[1])
+
     result["scanner_manufacturer"] = first_existing_column(frame, ["Manufacturer_DICOM", "Manufacturer"])
-    result["image_path"] = result["image_id"].map(lambda value: str(image_dir / str(value)))
-    for column in ["Labels", "ReportID", "Modality_DICOM"]:
-        if column in frame.columns:
-            result[column.casefold()] = frame[column]
+
+    # Construct reproducible relative path without machine-specific absolute prefixes
+    def _get_rel_path(row):
+        img_id = str(row.get("ImageID", "")).strip()
+        img_dir = row.get("ImageDir", np.nan)
+        if pd.notna(img_dir):
+            try:
+                dir_num = int(float(img_dir))
+                return f"PadChest/images/{dir_num}/{img_id}"
+            except (ValueError, TypeError):
+                pass
+        return f"PadChest/images/{img_id}"
+
+    rel_paths = frame.apply(_get_rel_path, axis=1)
+
+    if image_dir is not None and not Path(image_dir).is_absolute():
+        rel_prefix = Path(image_dir).as_posix()
+        result["image_path"] = rel_paths.map(lambda p: f"{rel_prefix}/{p}")
+    else:
+        result["image_path"] = rel_paths
+
+    result["finding_labels"] = frame.get("Labels", np.nan)
+    result["follow_up"] = np.nan
+
     return ensure_standard_columns(result)
