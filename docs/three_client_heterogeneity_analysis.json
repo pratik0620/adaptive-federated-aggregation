@@ -1,0 +1,520 @@
+{
+  "metadata": {
+    "title": "Three-Client Heterogeneity Analysis & Validation Audit",
+    "project": "Adaptive Federated Aggregation Algorithm for Disease Prediction using Heterogeneous Healthcare Data",
+    "target_disease": "Pleural Effusion",
+    "status": "Authoritative Validated Audit",
+    "version": "2.0"
+  },
+  "federation_summary": {
+    "total_images": 255738,
+    "total_unique_patients": 100344,
+    "total_unique_studies": 143295,
+    "num_clients": 3,
+    "client_names": [
+      "NIH",
+      "CheXpert",
+      "PadChest"
+    ],
+    "schema_column_count": 17,
+    "all_splits_leak_free": true
+  },
+  "original_baseline_analysis_summary": {
+    "description": "Initial comparative analysis conducted directly after standardized preprocessing pipeline completion.",
+    "findings": {
+      "total_images": {
+        "NIH": 73678,
+        "CheXpert": 121817,
+        "PadChest": 60243,
+        "total": 255738
+      },
+      "reported_positive_ratios": {
+        "NIH": 0.1807,
+        "CheXpert": 0.7081,
+        "PadChest": 0.1636
+      },
+      "reported_age_means": {
+        "NIH": 46.49,
+        "CheXpert": 61.03,
+        "PadChest": 51.24
+      },
+      "reported_sex_male_pct": {
+        "NIH": 56.13,
+        "CheXpert": 59.11,
+        "PadChest": 44.91
+      },
+      "initial_view_position_findings": {
+        "NIH": "100% Frontal (62.3% PA / 37.7% AP recorded in view_position)",
+        "CheXpert": "84.06% Frontal / 15.94% Lateral",
+        "PadChest": "40.43% ViewPosition missing / NaN in raw DICOM header"
+      },
+      "initial_causal_assumptions": [
+        "Assumed CheXpert's ~71% positive prevalence was solely driven by high-acuity inpatient/ICU sampling.",
+        "Assumed CheXpert patients were predominantly geriatric hospital admissions.",
+        "Assumed CheXpert AP predominance was exclusively due to bedbound intensive care patients.",
+        "Assumed scanner manufacturer metadata was stripped for public release anonymization in NIH and CheXpert.",
+        "Assumed PadChest had high view missingness due to 40.4% NaN in raw ViewPosition_DICOM."
+      ]
+    }
+  },
+  "flagged_claims_and_corrections": [
+    {
+      "id": "AUDIT-01",
+      "dimension": "label_distribution_causality",
+      "original_claim": "CheXpert is overwhelmingly positive (70.8% positive), driven by high-acuity inpatient/ICU sampling.",
+      "status": "FLAGGED & REWORDED",
+      "root_cause_analysis": "While Stanford Hospital treats acute patients, the 70.81% positive rate in our clean dataset is primarily an artifact of the label filtering protocol. CheXpert raw metadata contains 90,203 images where Pleural Effusion was NaN (unmentioned) and 11,628 images where it was -1.0 (uncertain). Excluding all unmentioned and uncertain cases leaves 86,254 positive and 35,563 negative cases, creating an empirical positive rate of 86,254 / 121,817 = 70.81%. If unmentioned cases were considered negative, the raw prevalence would be 38.6%. In NIH, unmentioned conditions are marked negative (unless 'No Finding'), and in PadChest, negatives were restricted strictly to cases with explicit 'normal' label.",
+      "authoritative_correction": "CheXpert's 70.81% positive rate is an empirical label distribution skew driven jointly by hospital cohort characteristics and the explicit positive-vs-negative filtering protocol (excluding 90,203 unmentioned cases). It is not solely an indicator of clinical disease incidence."
+    },
+    {
+      "id": "AUDIT-02",
+      "dimension": "view_position_vs_projection_semantics",
+      "original_claim": "PadChest had 40.4% missing view positions, while CheXpert was 84% Frontal / 16% Lateral and NIH was 62% PA / 38% AP.",
+      "status": "FLAGGED & REWORDED",
+      "root_cause_analysis": "Conflation between Anatomical Orientation (Frontal vs Lateral) and Beam Trajectory (PA vs AP). NIH stored PA/AP in 'view_position' (contains 0 lateral views). CheXpert stored Frontal/Lateral in 'view_position' and PA/AP in 'projection'. PadChest stored the optional PACS DICOM header (40.4% unpopulated) in 'view_position', but provided a separate, 100% complete, radiologist-annotated 'Projection' column.",
+      "authoritative_correction": "Harmonized into: (1) Anatomical Orientation: NIH is 100.0% Frontal; CheXpert is 84.06% Frontal (102,400) / 15.94% Lateral (19,417); PadChest is 71.57% Frontal (43,113) / 28.43% Lateral (17,128). (2) Frontal Beam Trajectory: NIH Frontal is 62.29% PA (45,891) / 37.71% AP (27,787); CheXpert Frontal is 17.28% PA (17,694) / 82.72% AP (84,696); PadChest Frontal (excluding 225 costal) is 87.51% PA (37,530) / 12.49% AP or AP_horizontal (5,358)."
+    },
+    {
+      "id": "AUDIT-03",
+      "dimension": "age_demographics_and_pediatrics",
+      "original_claim": "Raw NIH age ranged from 1 to 413, and CheXpert patients were described as predominantly geriatric hospital admissions.",
+      "status": "FLAGGED & REWORDED",
+      "root_cause_analysis": "NIH contains 9 public typo records with values between 148 and 413 (max 413). CheXpert strictly excluded all pediatric patients (<18) and capped ages at 90.0 under HIPAA safe harbor rules. NIH contains 3,502 pediatrics (<18, 4.75%) and PadChest contains 3,522 pediatrics (<18, 5.85%), down to age 0 (neonates). CheXpert median adult age is 62.0 (IQR [50, 74]), which is middle-aged to older, but not strictly 'geriatric' (defined as 65+).",
+      "authoritative_correction": "Restricting analysis to the valid adult cohort (18 <= Age <= 100): NIH Adult Mean is 48.18 +/- 14.98 years (median 49.0); CheXpert Adult Mean is 61.03 +/- 17.52 years (median 62.0); PadChest Adult Mean is 53.86 +/- 17.50 years (median 53.0). CheXpert adults are genuinely 12.85 years older than NIH adults and 7.17 years older than PadChest adults, reflecting different institutional study/referral profiles rather than solely geriatric ICU admissions."
+    },
+    {
+      "id": "AUDIT-04",
+      "dimension": "ap_view_bedbound_causality",
+      "original_claim": "CheXpert is dominated by AP views (69.5%) due to bedbound/intensive care patients.",
+      "status": "FLAGGED & REWORDED",
+      "root_cause_analysis": "While AP projections are standard clinical practice for portable radiography when patients cannot stand, CheXpert includes both inpatient and outpatient cohorts (Irvin et al., 2019). Individual bedbound status is unrecorded in the metadata CSV. Asserting that all AP views were caused by bedbound intensive care status is an unsubstantiated causal claim.",
+      "authoritative_correction": "CheXpert contains a high proportion of portable/AP examinations (82.72% of frontal views), consistent with its clinical acquisition profile across acute inpatient, emergency, and outpatient departments. The AP vs PA distinction constitutes a profound visual concept shift."
+    },
+    {
+      "id": "AUDIT-05",
+      "dimension": "scanner_metadata_omission_rationale",
+      "original_claim": "Scanner manufacturer metadata was omitted during public release anonymization in NIH and CheXpert.",
+      "status": "FLAGGED & REWORDED",
+      "root_cause_analysis": "The public CSV tables released by NIH (Wang et al., 2017) and CheXpert (Irvin et al., 2019) do not include scanner manufacturer or native pixel dimensions. Stating institutional motives for this omission is an unverified assumption.",
+      "authoritative_correction": "Scanner manufacturer and native pixel dimensions are completely absent in the official metadata releases for NIH and CheXpert, but are 100% documented in PadChest (52.18% Imaging Dynamics Company Ltd, 47.82% Philips Medical Systems)."
+    },
+    {
+      "id": "AUDIT-06",
+      "dimension": "intra_client_train_test_prior_shift",
+      "original_claim": "Local client test sets evaluate performance under client training priors.",
+      "status": "FLAGGED & REWORDED",
+      "root_cause_analysis": "Internal prior probability shift exists within clients between train and test splits: CheXpert Train is 70.93% positive (automated report labeling), but its Test benchmark is 28.63% positive (radiologist consensus). NIH Train is 14.71% positive, but its Test set is 32.08% positive (curator enriched). PadChest Train is 16.41% positive and Test is 16.10% positive (stratified patient split).",
+      "authoritative_correction": "A local model trained on CheXpert will suffer severe calibration drift when evaluated on its own official test set due to the 70.9% to 28.6% prior drop. Threshold-independent metrics (AUROC, PR-AUC) and calibration adjustments are mandatory."
+    },
+    {
+      "id": "AUDIT-07",
+      "dimension": "evaluation_benchmark_sample_size_asymmetry",
+      "original_claim": "Local client test results are equally reliable indicators of model generalization.",
+      "status": "FLAGGED & REWORDED",
+      "root_cause_analysis": "CheXpert contributes 51.9% of all training samples (109,572 images), but its held-out test set contains only 234 images (67 positive, 167 negative). In contrast, NIH test contains 14,519 images and PadChest test contains 5,926 images.",
+      "authoritative_correction": "CheXpert test AUROC has an estimated standard error of +/-6.5%, compared to +/-0.8% on NIH. Evaluation cannot rely on unweighted client score averaging."
+    }
+  ],
+  "authoritative_validated_audit": {
+    "clients": {
+      "NIH": {
+        "institution": "NIH Clinical Center (USA)",
+        "total_images": 73678,
+        "unique_patients": 25923,
+        "unique_studies": null,
+        "images_per_patient": 2.84,
+        "total_positive": 13317,
+        "total_negative": 60361,
+        "positive_ratio": 0.1807,
+        "splits": {
+          "train": {
+            "images": 53323,
+            "unique_patients": 20977,
+            "unique_studies": null,
+            "positive": 7842,
+            "negative": 45481,
+            "positive_ratio": 0.1471
+          },
+          "val": {
+            "images": 5836,
+            "unique_patients": 2331,
+            "unique_studies": null,
+            "positive": 817,
+            "negative": 5019,
+            "positive_ratio": 0.14
+          },
+          "test": {
+            "images": 14519,
+            "unique_patients": 2615,
+            "unique_studies": null,
+            "positive": 4658,
+            "negative": 9861,
+            "positive_ratio": 0.3208
+          }
+        },
+        "demographics": {
+          "age": {
+            "count": 73678,
+            "nulls": 0,
+            "raw_min": 1.0,
+            "raw_max": 413.0,
+            "outliers_gt_100": 9,
+            "pediatric_lt_18": {
+              "count": 3502,
+              "percentage": 4.75
+            },
+            "adult_cohort_18_100": {
+              "count": 70167,
+              "mean": 48.18,
+              "std": 14.98,
+              "median": 49.0,
+              "iqr_25_75": [
+                36.0,
+                59.0
+              ]
+            }
+          },
+          "sex": {
+            "counts": {
+              "M": 41357,
+              "F": 32321
+            },
+            "ratios": {
+              "M": 0.5613,
+              "F": 0.4387
+            },
+            "nulls": 0
+          }
+        },
+        "radiological_views": {
+          "harmonized_orientation": {
+            "frontal": {
+              "count": 73678,
+              "percentage": 100.0
+            },
+            "lateral": {
+              "count": 0,
+              "percentage": 0.0
+            }
+          },
+          "harmonized_frontal_projection": {
+            "pa": {
+              "count": 45891,
+              "percentage": 62.29
+            },
+            "ap_or_horizontal": {
+              "count": 27787,
+              "percentage": 37.71
+            }
+          }
+        },
+        "hardware_and_sensor": {
+          "scanner_manufacturer_nulls": 73678,
+          "image_dimensions_nulls": 73678,
+          "pixel_spacing_nulls": 73678
+        },
+        "schema_missingness_pct": {
+          "image_id": 0.0,
+          "patient_id": 0.0,
+          "study_id": 100.0,
+          "source": 0.0,
+          "target": 0.0,
+          "age": 0.0,
+          "sex": 0.0,
+          "view_position": 0.0,
+          "projection": 0.0,
+          "image_width": 100.0,
+          "image_height": 100.0,
+          "pixel_spacing_x": 100.0,
+          "pixel_spacing_y": 100.0,
+          "scanner_manufacturer": 100.0,
+          "image_path": 0.0,
+          "finding_labels": 0.0,
+          "follow_up": 0.0
+        }
+      },
+      "CheXpert": {
+        "institution": "Stanford Hospital (USA)",
+        "total_images": 121817,
+        "unique_patients": 41009,
+        "unique_studies": 100728,
+        "images_per_patient": 2.97,
+        "total_positive": 86254,
+        "total_negative": 35563,
+        "positive_ratio": 0.7081,
+        "splits": {
+          "train": {
+            "images": 109572,
+            "unique_patients": 36728,
+            "unique_studies": 90675,
+            "positive": 77719,
+            "negative": 31853,
+            "positive_ratio": 0.7093
+          },
+          "val": {
+            "images": 12011,
+            "unique_patients": 4081,
+            "unique_studies": 9853,
+            "positive": 8468,
+            "negative": 3543,
+            "positive_ratio": 0.705
+          },
+          "test": {
+            "images": 234,
+            "unique_patients": 200,
+            "unique_studies": 200,
+            "positive": 67,
+            "negative": 167,
+            "positive_ratio": 0.2863
+          }
+        },
+        "demographics": {
+          "age": {
+            "count": 121817,
+            "nulls": 0,
+            "raw_min": 18.0,
+            "raw_max": 90.0,
+            "outliers_gt_100": 0,
+            "pediatric_lt_18": {
+              "count": 0,
+              "percentage": 0.0
+            },
+            "adult_cohort_18_100": {
+              "count": 121817,
+              "mean": 61.03,
+              "std": 17.52,
+              "median": 62.0,
+              "iqr_25_75": [
+                50.0,
+                74.0
+              ]
+            }
+          },
+          "sex": {
+            "counts": {
+              "M": 72002,
+              "F": 49814,
+              "UNKNOWN": 1
+            },
+            "ratios": {
+              "M": 0.5911,
+              "F": 0.4089,
+              "UNKNOWN": 0.0
+            },
+            "nulls": 0
+          }
+        },
+        "radiological_views": {
+          "harmonized_orientation": {
+            "frontal": {
+              "count": 102400,
+              "percentage": 84.06
+            },
+            "lateral": {
+              "count": 19417,
+              "percentage": 15.94
+            }
+          },
+          "harmonized_frontal_projection": {
+            "pa": {
+              "count": 17694,
+              "percentage": 17.28
+            },
+            "ap_or_horizontal": {
+              "count": 84696,
+              "percentage": 82.72
+            }
+          }
+        },
+        "hardware_and_sensor": {
+          "scanner_manufacturer_nulls": 121817,
+          "image_dimensions_nulls": 121817,
+          "pixel_spacing_nulls": 121817
+        },
+        "schema_missingness_pct": {
+          "image_id": 0.0,
+          "patient_id": 0.0,
+          "study_id": 0.0,
+          "source": 0.0,
+          "target": 0.0,
+          "age": 0.0,
+          "sex": 0.0,
+          "view_position": 0.0,
+          "projection": 15.94,
+          "image_width": 100.0,
+          "image_height": 100.0,
+          "pixel_spacing_x": 100.0,
+          "pixel_spacing_y": 100.0,
+          "scanner_manufacturer": 100.0,
+          "image_path": 0.0,
+          "finding_labels": 100.0,
+          "follow_up": 100.0
+        }
+      },
+      "PadChest": {
+        "institution": "Hospital Universitario de San Juan de Alicante (Spain)",
+        "total_images": 60243,
+        "unique_patients": 33412,
+        "unique_studies": 42567,
+        "images_per_patient": 1.8,
+        "total_positive": 9853,
+        "total_negative": 50390,
+        "positive_ratio": 0.1636,
+        "splits": {
+          "train": {
+            "images": 48340,
+            "unique_patients": 26729,
+            "unique_studies": 34092,
+            "positive": 7934,
+            "negative": 40406,
+            "positive_ratio": 0.1641
+          },
+          "val": {
+            "images": 5977,
+            "unique_patients": 3341,
+            "unique_studies": 4246,
+            "positive": 965,
+            "negative": 5012,
+            "positive_ratio": 0.1615
+          },
+          "test": {
+            "images": 5926,
+            "unique_patients": 3342,
+            "unique_studies": 4229,
+            "positive": 954,
+            "negative": 4972,
+            "positive_ratio": 0.161
+          }
+        },
+        "demographics": {
+          "age": {
+            "count": 60241,
+            "nulls": 2,
+            "raw_min": 0.0,
+            "raw_max": 104.0,
+            "outliers_gt_100": 5,
+            "pediatric_lt_18": {
+              "count": 3522,
+              "percentage": 5.85
+            },
+            "adult_cohort_18_100": {
+              "count": 56714,
+              "mean": 53.86,
+              "std": 17.5,
+              "median": 53.0,
+              "iqr_25_75": [
+                41.0,
+                67.0
+              ]
+            }
+          },
+          "sex": {
+            "counts": {
+              "F": 33180,
+              "M": 27053,
+              "O": 6
+            },
+            "ratios": {
+              "F": 0.5508,
+              "M": 0.4491,
+              "O": 0.0001
+            },
+            "nulls": 4
+          }
+        },
+        "radiological_views": {
+          "harmonized_orientation": {
+            "frontal": {
+              "count": 43113,
+              "percentage": 71.57
+            },
+            "lateral": {
+              "count": 17128,
+              "percentage": 28.43
+            }
+          },
+          "harmonized_frontal_projection": {
+            "pa": {
+              "count": 37530,
+              "percentage_of_pa_ap": 87.51,
+              "percentage_of_all_frontal": 87.05
+            },
+            "ap_or_horizontal": {
+              "count": 5358,
+              "percentage_of_pa_ap": 12.49,
+              "percentage_of_all_frontal": 12.43
+            },
+            "costal": {
+              "count": 225,
+              "percentage_of_all_frontal": 0.52
+            }
+          }
+        },
+        "hardware_and_sensor": {
+          "scanner_manufacturer_counts": {
+            "ImagingDynamicsCompanyLtd": 31432,
+            "PhilipsMedicalSystems": 28811
+          },
+          "scanner_manufacturer_nulls": 0,
+          "image_dimensions_nulls": 0,
+          "image_width_mean": 2293.5,
+          "image_height_mean": 2382.4,
+          "pixel_spacing_nulls": 60243
+        },
+        "schema_missingness_pct": {
+          "image_id": 0.0,
+          "patient_id": 0.0,
+          "study_id": 0.0,
+          "source": 0.0,
+          "target": 0.0,
+          "age": 0.0,
+          "sex": 0.01,
+          "view_position": 40.43,
+          "projection": 0.0,
+          "image_width": 0.0,
+          "image_height": 0.0,
+          "pixel_spacing_x": 100.0,
+          "pixel_spacing_y": 100.0,
+          "scanner_manufacturer": 0.0,
+          "image_path": 0.0,
+          "finding_labels": 0.0,
+          "follow_up": 100.0
+        }
+      }
+    }
+  },
+  "federated_learning_dimensions": {
+    "axis_1_label_distribution_skew": {
+      "dimension": "Prior Probability Shift P(Y)",
+      "empirical_state": "CheXpert training is 70.93% positive; PadChest is 16.41% positive; NIH is 14.71% positive.",
+      "algorithmic_implication": "Local gradients update classifier bias in opposing directions. FedAvg will drift toward the positive class, producing high false positive rates on NIH and PadChest."
+    },
+    "axis_2_feature_and_concept_shift": {
+      "dimension": "Visual Presentation Shift P(X_image | Y)",
+      "empirical_state": "CheXpert frontal images are 82.72% AP; NIH frontal images are 62.29% PA; PadChest frontal images are 87.51% PA.",
+      "algorithmic_implication": "Upright PA presents focal costophrenic angle blunting / meniscus sign; portable AP presents diffuse posterior fluid layering and cardiac magnification."
+    },
+    "axis_3_viewpoint_heterogeneity": {
+      "dimension": "Anatomical Perspective Availability",
+      "empirical_state": "NIH has 0% lateral views; CheXpert has 15.94% lateral views; PadChest has 28.43% lateral views.",
+      "algorithmic_implication": "Federated models requiring multi-view or lateral views cannot run on NIH. Frontal-only standardizing is required for cross-client interoperability."
+    },
+    "axis_4_demographic_covariate_shift": {
+      "dimension": "Demographic Covariate Shift P(X_demo)",
+      "empirical_state": "CheXpert adult mean age is 61.03 +/- 17.52 years; NIH adult mean age is 48.18 +/- 14.98 years. Sex composition inverts from male majority in US (56-59% M) to female majority in Spain (55.1% F).",
+      "algorithmic_implication": "Baseline anatomical variations (thoracic cage size, cardiothoracic ratio, lung compliance) correlate with demographics across client domains."
+    },
+    "axis_5_client_scale_and_evaluation_asymmetry": {
+      "dimension": "Participation Share & Benchmark Statistical Power",
+      "empirical_state": "CheXpert accounts for 51.9% of all training samples (109,572 images). CheXpert's official test set contains 234 images vs NIH's 14,519 images and PadChest's 5,926 images.",
+      "algorithmic_implication": "Naive FedAvg weighting w_k = n_k / N is dominated by CheXpert. CheXpert test AUROC has high variance (+/-6.5%), requiring stratified bootstrap evaluation."
+    }
+  },
+  "recommendations_for_fl_experiment_design": [
+    "1. Input Standardization: Restrict baseline FL benchmark to Frontal radiographs (PA and AP) to create a shared 100% interoperable domain across all three nodes.",
+    "2. Client Loss Weighting: Use effective-number-of-samples weighting or Focal Loss locally to stabilize gradient trajectories against local prior skew.",
+    "3. Adaptive Aggregation: Replace naive FedAvg with adaptive aggregation (gradient similarity / divergence penalties) to prevent CheXpert's 51.9% sample share from dominating the global trajectory.",
+    "4. Threshold-Free Evaluation: Use AUROC and macro PR-AUC as primary metrics rather than fixed-threshold accuracy to avoid distortions from prior inversion.",
+    "5. Cross-Client Matrix: Evaluate a full 3x3 cross-testing matrix (train on client i, test on client j) to directly measure domain adaptation and generalization gap."
+  ]
+}
