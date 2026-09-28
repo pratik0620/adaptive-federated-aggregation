@@ -5,7 +5,22 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from preprocessing_utils import ensure_standard_columns, first_existing_column, normalize_label, parse_label_list, parse_pixel_spacing
+try:
+    from .preprocessing_utils import (
+        ensure_standard_columns,
+        first_existing_column,
+        normalize_label,
+        parse_label_list,
+        parse_pixel_spacing,
+    )
+except ImportError:
+    from preprocessing_utils import (
+        ensure_standard_columns,
+        first_existing_column,
+        normalize_label,
+        parse_label_list,
+        parse_pixel_spacing,
+    )
 
 
 def nih_clean_binary_labels(frame: pd.DataFrame, target_disease: str) -> tuple[pd.DataFrame, dict]:

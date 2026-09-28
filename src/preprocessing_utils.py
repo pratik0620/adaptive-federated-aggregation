@@ -12,7 +12,10 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from config import STANDARD_COLUMNS
+try:
+    from .config import STANDARD_COLUMNS
+except ImportError:
+    from config import STANDARD_COLUMNS
 
 
 def set_reproducibility(seed: int = 42) -> None:
