@@ -40,7 +40,11 @@ def standardize_nih(frame: pd.DataFrame, image_dir) -> pd.DataFrame:
     result["pixel_spacing_x"] = spacing.map(lambda value: value[0])
     result["pixel_spacing_y"] = spacing.map(lambda value: value[1])
     result["scanner_manufacturer"] = np.nan
-    result["image_path"] = result["image_id"].map(lambda value: str(image_dir / str(value)))
+    result["image_path"] = (
+        result["image_id"].map(lambda value: str(image_dir / str(value)))
+        if image_dir is not None
+        else np.nan
+    )
     result["finding_labels"] = frame["Finding Labels"]
     if "Follow-up #" in frame.columns:
         result["follow_up"] = frame["Follow-up #"]
