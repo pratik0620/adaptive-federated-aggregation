@@ -1,0 +1,29 @@
+# Medical images and downloaded archives
+*.jpg
+*.jpeg
+*.png
+*.dcm
+*.zip
+*.tar
+*.gz
+
+# Local datasets and mounts
+data/
+datasets/
+Google Drive/
+/content/
+
+# Generated outputs and training artifacts
+checkpoints/
+models/
+logs/
+*.pt
+*.pth
+*.ckpt
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
