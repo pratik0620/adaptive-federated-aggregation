@@ -151,6 +151,34 @@ def split_by_patient(
     return result
 
 
+def split_train_val_by_patient(
+    frame: pd.DataFrame,
+    seed: int = 42,
+    val_size: float = 0.1,
+) -> dict[str, pd.DataFrame]:
+    """Split a frame into train and validation without creating a new test set."""
+    if not 0 < val_size < 1:
+        raise ValueError("val_size must be between 0 and 1")
+    patient_table = frame[["patient_id", "target"]].drop_duplicates("patient_id").copy()
+    patient_table["patient_id"] = patient_table["patient_id"].astype(str)
+    patient_table["patient_target"] = patient_table.groupby("patient_id")["target"].transform("mean") >= 0.5
+    stratify = patient_table["patient_target"] if patient_table["patient_target"].nunique() > 1 else None
+    try:
+        train_patients, val_patients = train_test_split(
+            patient_table["patient_id"], test_size=val_size, random_state=seed, stratify=stratify
+        )
+    except ValueError:
+        train_patients, val_patients = train_test_split(
+            patient_table["patient_id"], test_size=val_size, random_state=seed
+        )
+    assignments = {"train": set(train_patients), "val": set(val_patients)}
+    assert assignments["train"].isdisjoint(assignments["val"])
+    return {
+        split: frame[frame["patient_id"].astype(str).isin(patients)].copy().reset_index(drop=True)
+        for split, patients in assignments.items()
+    }
+
+
 def assert_no_leakage(splits: dict[str, pd.DataFrame], column: str = "patient_id") -> None:
     sets = {name: set(df[column].dropna().astype(str)) for name, df in splits.items()}
     names = list(sets)

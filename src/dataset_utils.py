@@ -23,15 +23,21 @@ except ImportError:
     )
 
 
-def nih_clean_binary_labels(frame: pd.DataFrame, target_disease: str) -> tuple[pd.DataFrame, dict]:
+def nih_clean_binary_labels(
+    frame: pd.DataFrame,
+    target_disease: str,
+    source_target_label: str | None = None,
+) -> tuple[pd.DataFrame, dict]:
     labels = frame["Finding Labels"].map(parse_label_list)
-    target = normalize_label(target_disease)
+    target = normalize_label(source_target_label or target_disease)
     normalized = labels.map(lambda values: {normalize_label(value) for value in values})
     positive = normalized.map(lambda values: target in values)
     negative = normalized.map(lambda values: values == {"no finding"})
     filtered = frame[positive | negative].copy()
     filtered["target"] = np.where(positive[filtered.index], 1, 0)
     return filtered, {
+        "target_disease": target_disease,
+        "source_target_label": source_target_label or target_disease,
         "positive_before_filter": int(positive.sum()),
         "negative_before_filter": int(negative.sum()),
         "excluded_ambiguous_before_filter": int((~(positive | negative)).sum()),
