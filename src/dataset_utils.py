@@ -23,13 +23,23 @@ except ImportError:
     )
 
 
+NIH_SOURCE_LABEL_MAP = {
+    "pleural effusion": "Effusion",
+}
+
+
 def nih_clean_binary_labels(
     frame: pd.DataFrame,
-    target_disease: str,
+    target_disease: str = "Pleural Effusion",
     source_target_label: str | None = None,
 ) -> tuple[pd.DataFrame, dict]:
+    effective_source_label = (
+        source_target_label
+        or NIH_SOURCE_LABEL_MAP.get(normalize_label(target_disease))
+        or target_disease
+    )
     labels = frame["Finding Labels"].map(parse_label_list)
-    target = normalize_label(source_target_label or target_disease)
+    target = normalize_label(effective_source_label)
     normalized = labels.map(lambda values: {normalize_label(value) for value in values})
     positive = normalized.map(lambda values: target in values)
     negative = normalized.map(lambda values: values == {"no finding"})
@@ -37,7 +47,7 @@ def nih_clean_binary_labels(
     filtered["target"] = np.where(positive[filtered.index], 1, 0)
     return filtered, {
         "target_disease": target_disease,
-        "source_target_label": source_target_label or target_disease,
+        "source_target_label": effective_source_label,
         "positive_before_filter": int(positive.sum()),
         "negative_before_filter": int(negative.sum()),
         "excluded_ambiguous_before_filter": int((~(positive | negative)).sum()),

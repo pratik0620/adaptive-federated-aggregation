@@ -196,7 +196,8 @@ def assert_no_study_leakage(splits: dict[str, pd.DataFrame]) -> None:
             assert available[left].isdisjoint(available[right]), f"study_id leakage: {left} overlaps {right}"
 
 
-def save_splits(splits: dict[str, pd.DataFrame], output_dir: Path) -> None:
+def save_splits(splits: dict[str, pd.DataFrame], output_dir: Path | str) -> None:
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     for name, split in splits.items():
         split.to_csv(output_dir / f"{name}.csv", index=False)
@@ -223,7 +224,8 @@ def build_summary(splits: dict[str, pd.DataFrame], source: str, parameters: dict
     return summary
 
 
-def save_summary(summary: dict, output_dir: Path) -> None:
+def save_summary(summary: dict, output_dir: Path | str) -> None:
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
 

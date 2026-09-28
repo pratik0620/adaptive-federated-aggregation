@@ -28,8 +28,8 @@ notebooks/
   04_validate_federated_dataset.ipynb
 ```
 
-Each preprocessing notebook writes metadata CSVs to a separate directory:
-`client_01_NIH`, `client_02_CheXpert`, and `client_03_PadChest`. The `image_path` column points to the original mounted image; files are not copied.
+Each preprocessing notebook writes metadata CSVs to a separate directory under `data/processed/`:
+`data/processed/NIH`, `data/processed/CheXpert`, and `data/processed/PadChest`. The `image_path` column points to the original mounted image; files are not copied.
 
 ## Google Colab
 
