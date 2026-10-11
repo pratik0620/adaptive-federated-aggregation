@@ -8,15 +8,18 @@
 *.gz
 
 # Local datasets and mounts
-data/
+/data/
+!src/data/
 datasets/
 Google Drive/
 /content/
 
 # Generated outputs and training artifacts
 checkpoints/
-models/
+/models/
+!src/models/
 logs/
+outputs/
 *.pt
 *.pth
 *.ckpt
