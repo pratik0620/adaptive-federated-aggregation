@@ -23,6 +23,8 @@ outputs/
 *.pt
 *.pth
 *.ckpt
+*.onnx
+*.safetensors
 
 # Python environments and caches
 .venv/
