@@ -162,9 +162,9 @@ def build_chexpert_client(
     test_df = pd.read_csv(proc_path / "test.csv")
 
     # Filter frontal views
-    train_df = filter_chexpert_frontal_views(train_df)
-    val_df = filter_chexpert_frontal_views(val_df)
-    test_df = filter_chexpert_frontal_views(test_df)
+    train_df, _ = filter_chexpert_frontal_views(train_df, split_name="train")
+    val_df, _ = filter_chexpert_frontal_views(val_df, split_name="val")
+    test_df, _ = filter_chexpert_frontal_views(test_df, split_name="test")
 
     search_roots = []
     if image_dir:
@@ -258,9 +258,9 @@ def build_padchest_client(
     val_df = pd.read_csv(proc_path / "val.csv")
     test_df = pd.read_csv(proc_path / "test.csv")
 
-    train_df = filter_padchest_frontal_views(train_df)
-    val_df = filter_padchest_frontal_views(val_df)
-    test_df = filter_padchest_frontal_views(test_df)
+    train_df, _ = filter_padchest_frontal_views(train_df, split_name="train")
+    val_df, _ = filter_padchest_frontal_views(val_df, split_name="val")
+    test_df, _ = filter_padchest_frontal_views(test_df, split_name="test")
 
     search_roots = []
     if image_dir:

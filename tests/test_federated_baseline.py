@@ -17,10 +17,12 @@ Automated tests covering:
 from __future__ import annotations
 
 import copy
+import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 import torch.nn as nn
@@ -460,3 +462,57 @@ def test_synthetic_end_to_end_smoke_test():
             out_server = server.global_model(dummy_x)
             out_reloaded = reloaded_model(dummy_x)
             assert torch.allclose(out_server, out_reloaded), "Reloaded model outputs do not match server model!"
+
+
+# ---------------------------------------------------------------------------
+# Test 12: Run metadata logging and designated test evaluation stage
+# ---------------------------------------------------------------------------
+def test_run_metadata_and_test_evaluation_stage():
+    """Verify that experiment metadata is logged and test evaluation runs only at designated stage."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir) / "logging_test_run"
+
+        model = nn.Linear(8, 1)
+        c1 = SyntheticFederatedClient("c1", input_dim=8, model=copy.deepcopy(model))
+
+        config = FederatedConfig(
+            experiment_name="test_experiment_exp01",
+            initialization_id="init_seed_42_resnet",
+            aggregation_method="fedavg",
+            cap_value=None,
+            num_rounds=1,
+            local_epochs=1,
+            seed=42,
+            output_dir=str(output_dir),
+        )
+
+        server = FederatedServer(
+            global_model=model,
+            clients=[c1],
+            config=config,
+            output_dir=output_dir,
+        )
+
+        # Run federated rounds
+        server.run_federated()
+
+        # 1. Verify run_metadata.json exists and has all experiment tracking fields
+        metadata_path = output_dir / "run_metadata.json"
+        assert metadata_path.is_file(), "run_metadata.json was not created!"
+        meta = json.loads(metadata_path.read_text(encoding="utf-8"))
+        assert meta["experiment_name"] == "test_experiment_exp01"
+        assert meta["initialization_id"] == "init_seed_42_resnet"
+        assert meta["aggregation_method"] == "fedavg"
+        assert meta["seed"] == 42
+        assert "best_checkpoint" in meta["checkpoint_paths"]
+
+        # 2. Verify test split metrics are NOT in history.csv
+        history_df = pd.read_csv(output_dir / "history.csv")
+        for col in history_df.columns:
+            assert "test" not in col.lower(), f"Test split leaked into round history column: {col}"
+
+        # 3. Execute held-out test evaluation stage
+        test_payload = server.evaluate_test_benchmark()
+        assert (output_dir / "test_metrics.json").is_file()
+        assert test_payload["experiment_name"] == "test_experiment_exp01"
+        assert "c1" in test_payload["clients"]

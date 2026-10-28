@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+import platform
 import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -192,6 +193,11 @@ class FederatedServer:
         # Compile round summary
         round_summary = {
             "round": round_idx,
+            "experiment_name": self.config.experiment_name,
+            "aggregation_method": self.config.aggregation_method,
+            "cap_value": self.config.cap_value,
+            "seed": self.config.seed,
+            "initialization_id": self.config.initialization_id,
             "duration_seconds": round_duration,
             "participating_clients": active_cids,
             "sample_counts": {cid: n_k for cid, n_k in zip(active_cids, sample_counts)},
@@ -268,6 +274,33 @@ class FederatedServer:
             config=self.config.to_dict(),
         )
 
+        # Export run metadata
+        metadata = {
+            "experiment_name": self.config.experiment_name,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "python_version": platform.python_version(),
+            "torch_version": torch.__version__,
+            "cuda_available": torch.cuda.is_available(),
+            "device": str(self.device),
+            "seed": self.config.seed,
+            "initialization_id": self.config.initialization_id,
+            "aggregation_method": self.config.aggregation_method,
+            "cap_value": self.config.cap_value,
+            "total_rounds_completed": rounds,
+            "total_training_time_seconds": total_time,
+            "best_round": self.best_round,
+            "best_metric_value": self.best_metric_value,
+            "metric_optimized": self.config.metric_to_optimize,
+            "checkpoint_paths": {
+                "best_checkpoint": str(self.output_dir / "best_global_checkpoint.pt"),
+                "final_checkpoint": str(self.output_dir / "final_global_checkpoint.pt"),
+            },
+            "config": self.config.to_dict(),
+        }
+        (self.output_dir / "run_metadata.json").write_text(
+            json.dumps(metadata, indent=2, default=str), encoding="utf-8"
+        )
+
         # Export round_metrics.json
         (self.output_dir / "round_metrics.json").write_text(
             json.dumps(self.round_history, indent=2, default=str), encoding="utf-8"
@@ -278,6 +311,10 @@ class FederatedServer:
         for r_data in self.round_history:
             row: dict[str, Any] = {
                 "round": r_data["round"],
+                "experiment_name": r_data.get("experiment_name"),
+                "aggregation_method": r_data.get("aggregation_method"),
+                "cap_value": r_data.get("cap_value"),
+                "seed": r_data.get("seed"),
                 "duration_seconds": r_data["duration_seconds"],
                 "mean_val_auroc": r_data.get("mean_val_auroc"),
             }
@@ -298,3 +335,45 @@ class FederatedServer:
         history_df.to_csv(self.output_dir / "history.csv", index=False)
 
         return self.round_history
+
+    def evaluate_test_benchmark(
+        self,
+        checkpoint_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate the specified global checkpoint on held-out test splits.
+
+        IMPORTANT RESEARCH RULE:
+          Test split evaluation must ONLY be invoked after all training rounds and
+          hyperparameter/cap selection are completely finalized. Test data must never
+          influence model selection, threshold sweeps, or aggregation weights.
+        """
+        target_path = Path(checkpoint_path) if checkpoint_path else (self.output_dir / "best_global_checkpoint.pt")
+        if not target_path.is_file():
+            target_path = self.output_dir / "final_global_checkpoint.pt"
+        if not target_path.is_file():
+            raise FileNotFoundError(f"Global checkpoint not found at: {target_path}")
+
+        print(f"\n[Test Evaluation] Evaluating global checkpoint on held-out test splits: {target_path.name}")
+        ckpt = torch.load(target_path, map_location=self.device)
+        model_state = ckpt.get("model_state_dict", ckpt)
+
+        test_results: dict[str, Any] = {}
+        for cid, client in self.clients.items():
+            t_metrics = client.evaluate(model_state_dict=model_state, split="test")
+            test_results[cid] = t_metrics
+            auc_str = f"{t_metrics['auroc']:.4f}" if t_metrics.get("auroc") is not None else "N/A"
+            print(f"  * {cid:20s} | Test AUROC: {auc_str:7s} | Status: {t_metrics.get('evaluation_status', 'N/A')}")
+
+        test_payload = {
+            "checkpoint_evaluated": str(target_path),
+            "experiment_name": self.config.experiment_name,
+            "aggregation_method": self.config.aggregation_method,
+            "cap_value": self.config.cap_value,
+            "seed": self.config.seed,
+            "clients": test_results,
+        }
+
+        (self.output_dir / "test_metrics.json").write_text(
+            json.dumps(test_payload, indent=2, default=str), encoding="utf-8"
+        )
+        return test_payload

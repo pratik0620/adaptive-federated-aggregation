@@ -13,6 +13,10 @@ from typing import Any
 class FederatedConfig:
     """Configuration parameters for the three-client federated learning baseline."""
 
+    experiment_name: str = "federated_baseline_fedavg"
+    initialization_id: str = "imagenet_pretrained_resnet50"
+    aggregation_method: str = "fedavg"
+    cap_value: float | None = None
     num_rounds: int = 5
     local_epochs: int = 1
     batch_size: int = 32
@@ -67,6 +71,31 @@ def create_federated_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Path to JSON configuration file overriding default settings.",
+    )
+    parser.add_argument(
+        "--experiment_name",
+        type=str,
+        default="federated_baseline_fedavg",
+        help="Experiment run identifier.",
+    )
+    parser.add_argument(
+        "--initialization_id",
+        type=str,
+        default="imagenet_pretrained_resnet50",
+        help="Identifier for the initial model state or checkpoint.",
+    )
+    parser.add_argument(
+        "--aggregation_method",
+        type=str,
+        default="fedavg",
+        choices=["fedavg", "capped_fedavg"],
+        help="Parameter aggregation algorithm.",
+    )
+    parser.add_argument(
+        "--cap_value",
+        type=float,
+        default=None,
+        help="Optional upper bound on client aggregation weight (for Capped FedAvg).",
     )
     parser.add_argument(
         "--rounds",

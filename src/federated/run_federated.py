@@ -64,6 +64,11 @@ def main() -> None:
         action="store_true",
         help="Validate configuration and clients without executing training rounds.",
     )
+    parser.add_argument(
+        "--evaluate_test",
+        action="store_true",
+        help="Execute held-out test split evaluation after all communication rounds complete.",
+    )
     args = parser.parse_args()
 
     # Load external config if provided
@@ -76,6 +81,10 @@ def main() -> None:
 
     # CLI args override file config
     for k in (
+        "experiment_name",
+        "initialization_id",
+        "aggregation_method",
+        "cap_value",
         "num_rounds",
         "local_epochs",
         "batch_size",
@@ -207,6 +216,10 @@ def main() -> None:
 
     # Execute federated learning rounds
     server.run_federated()
+
+    if args.evaluate_test:
+        print("\n[Evaluation Stage] Executing final held-out test split benchmark...")
+        server.evaluate_test_benchmark()
 
 
 if __name__ == "__main__":
