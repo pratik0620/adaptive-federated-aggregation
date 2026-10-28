@@ -72,11 +72,13 @@ def build_nih_client(
     search_roots = []
     if image_dir:
         search_roots.append(Path(image_dir).resolve())
-    search_roots.extend([
-        root / "data" / "raw" / "NIH" / "images",
-        root / "data" / "raw" / "NIH",
-        root / "data" / "raw",
-    ])
+    else:
+        for candidate in [
+            root / "data" / "raw" / "NIH" / "images",
+            root / "data" / "raw" / "NIH",
+        ]:
+            if candidate.exists():
+                search_roots.append(candidate)
 
     resolver = NIHPathResolver(search_roots=search_roots)
     resolver.build_index()
@@ -169,12 +171,14 @@ def build_chexpert_client(
     search_roots = []
     if image_dir:
         search_roots.append(Path(image_dir).resolve())
-    search_roots.extend([
-        root / "data" / "raw" / "CheXpert" / "images",
-        root / "data" / "raw" / "CheXpert" / "CheXpert-v1.0-small",
-        root / "data" / "raw" / "CheXpert",
-        root / "data" / "raw",
-    ])
+    else:
+        for candidate in [
+            root / "data" / "raw" / "CheXpert" / "images",
+            root / "data" / "raw" / "CheXpert" / "CheXpert-v1.0-small",
+            root / "data" / "raw" / "CheXpert",
+        ]:
+            if candidate.exists():
+                search_roots.append(candidate)
 
     resolver = CheXpertPathResolver(search_roots=search_roots)
     resolver.build_index()
@@ -265,11 +269,13 @@ def build_padchest_client(
     search_roots = []
     if image_dir:
         search_roots.append(Path(image_dir).resolve())
-    search_roots.extend([
-        root / "data" / "raw" / "PadChest" / "images",
-        root / "data" / "raw" / "PadChest",
-        root / "data" / "raw",
-    ])
+    else:
+        for candidate in [
+            root / "data" / "raw" / "PadChest" / "images",
+            root / "data" / "raw" / "PadChest",
+        ]:
+            if candidate.exists():
+                search_roots.append(candidate)
 
     resolver = PadChestPathResolver(search_roots=search_roots)
     resolver.build_index()

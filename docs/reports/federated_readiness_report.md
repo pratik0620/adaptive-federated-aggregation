@@ -19,12 +19,13 @@ This readiness audit systematically examines the active Python environment, soft
 | Component / Subsystem | Status | Key Operational Finding |
 | :--- | :---: | :--- |
 | **Python Runtime** | **VERIFIED** | Python 3.13.3 (64-bit Windows), PyTorch 2.9.0+cpu. |
-| **Model Import (ResNet-50)** | **BLOCKED** | `torchvision` is missing; instantiating `build_resnet50_binary()` raises `ImportError`. |
-| **Image Loading** | **VERIFIED (FALLBACK)** | Pillow (`PIL`) is missing, but OpenCV (`cv2` 4.11.0) successfully loads and converts images to RGB `uint8`. |
-| **Federated Pipeline Code** | **VERIFIED** | All 26 unit and synthetic integration tests pass (`pytest tests/`). Standard FedAvg baseline and decoupled aggregation architecture verified. |
-| **Client 01 (NIH) Data** | **PARTIAL** | Metadata complete (73,678 total images). 4,999 raw images present on disk (`images_001/`). Ready for pilot experiments with up to ~950 unique patients. |
-| **Client 02 (CheXpert) Data** | **BLOCKED** | Metadata complete (102,390 frontal images). Zero image files resolved in local directory; teammate checkpoint is absent from checkout. |
-| **Client 03 (PadChest) Data** | **BLOCKED** | Metadata complete (42,888 frontal images). Zero image files present on disk (`data/raw/PadChest/images` unpopulated). |
+| **Model Import (ResNet-50)** | **VERIFIED** | `torchvision` 0.24.0+cpu installed; `build_resnet50_binary()` instantiates cleanly (23,510,081 parameters). |
+| **Image Loading** | **VERIFIED** | Pillow (`PIL` 13.0.0) and OpenCV (`cv2` 4.11.0) both functional; image transform produces `torch.Size([3, 224, 224])`. |
+| **Federated Pipeline Code** | **VERIFIED** | All 31 unit, synthetic, and preflight integration tests pass (`pytest tests/`). Standard FedAvg baseline and decoupled aggregation architecture verified. |
+| **Experiment Preflight Guard**| **VERIFIED** | `src/federated/preflight.py` prevents silent degradation of 3-client experiments and halts early on unpopulated datasets. |
+| **Client 01 (NIH) Data** | **PARTIAL** | Metadata complete (73,678 total images). 4,999 raw images present on disk (`images_001/`). Ready for pilot experiments with up to ~952 unique patients. 1-batch training smoke test PASSED. |
+| **Client 02 (CheXpert) Data** | **BLOCKED** | Metadata complete (102,390 frontal images). Zero image files resolved in local directory; teammate checkpoint is absent from checkout. Smoke test BLOCKED. |
+| **Client 03 (PadChest) Data** | **BLOCKED** | Metadata complete (42,888 frontal images). Zero image files present on disk (`data/raw/PadChest/images` unpopulated). Smoke test BLOCKED. |
 
 ---
 
@@ -35,9 +36,9 @@ This readiness audit systematically examines the active Python environment, soft
 ```text
 Python:      3.13.3 (tags/v3.13.3:6280bb5, Apr 8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
 PyTorch:     2.9.0+cpu (CUDA Available: False)
-TorchVision: NOT INSTALLED (No module named 'torchvision')
-Pillow:      NOT INSTALLED (No module named 'PIL')
-OpenCV:      4.11.0 (cv2) - Functional fallback image decoder
+TorchVision: 0.24.0+cpu (VERIFIED COMPATIBLE)
+Pillow:      13.0.0 (PIL)
+OpenCV:      4.11.0 (cv2)
 NumPy:       2.2.6
 Pandas:      3.0.6
 Scikit-Learn:1.7.1
@@ -47,22 +48,13 @@ Pytest:      9.1.1
 
 ### 2.2 Model Import & Preprocessing Verification
 - **ResNet-50 Binary Instantiation:**
-  Running `from src.models.resnet import build_resnet50_binary; build_resnet50_binary()` raises:
-  ```text
-  ImportError: torchvision is required to instantiate ResNet50Binary. Please install torchvision via: pip install torchvision
-  ```
-- **Sample Image Decoding:**
-  Loading sample `data/raw/NIH/images/images_001/00000001_000.png` via `src.data.nih_dataset.load_image_rgb()` succeeded using the OpenCV fallback, returning a `(1024, 1024, 3)` RGB `uint8` array.
+  Running `from src.models.resnet import build_resnet50_binary; model = build_resnet50_binary(pretrained=False)` instantiates cleanly with single-logit output (`fc` replaced by `Linear(in_features=2048, out_features=1, bias=True)`).
+- **Sample Image Decoding & Transformation:**
+  Loading sample `data/raw/NIH/images/images_001/00000001_000.png` via `src.data.nih_dataset.load_image_rgb()` succeeded, transformed via standard ResNet evaluation pipeline to tensor shape `torch.Size([3, 224, 224])`, and executed a forward pass returning logit shape `torch.Size([1, 1])`.
 
-### 2.3 Recommended Dependency Remediation
-To enable full ResNet-50 architecture initialization and torchvision image transformations:
-```powershell
-pip install torchvision pillow
-```
-*Note:* Do not alter PyTorch version (`torch==2.9.0`) or unrelated packages. Verify installation with:
-```powershell
-python -c "import torchvision, PIL; print('TorchVision:', torchvision.__version__, '| Pillow:', PIL.__version__)"
-```
+### 2.3 Dependency Compatibility Notes
+- Standard `pip install torchvision` on Windows attempts to pull `torchvision==0.29.2`, which demands `torch>=2.14.0` due to SemVer mismatch (`2.9.0 < 2.14.0`), attempting an unintended PyTorch upgrade.
+- The exact matching wheel for PyTorch 2.9.0 on Python 3.13 is `torchvision==0.24.0`, which installs cleanly with zero alterations to existing packages.
 
 ---
 

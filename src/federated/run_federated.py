@@ -115,6 +115,12 @@ def main() -> None:
     fed_config.output_dir = str(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    if fed_config.participating_clients is None:
+        if args.synthetic:
+            fed_config.participating_clients = ["client_01", "client_02", "client_03"]
+        else:
+            fed_config.participating_clients = ["client_01_NIH", "client_02_CheXpert", "client_03_PadChest"]
+
     print("=" * 70)
     print("  Federated Learning Baseline: Standard FedAvg")
     print("=" * 70)
@@ -129,6 +135,29 @@ def main() -> None:
     print(f"Target Clients:         {fed_config.participating_clients}")
     print(f"Synthetic Mode:         {args.synthetic}")
     print("=" * 70)
+
+    # Execute strict preflight validation
+    from src.federated.preflight import PreflightError, run_federated_preflight
+
+    print("\n[Preflight] Running federated experiment preflight checks...")
+    try:
+        preflight_summary = run_federated_preflight(
+            config=fed_config,
+            repo_root=REPO_ROOT,
+            is_synthetic=args.synthetic,
+            abort_on_failure=(not args.dry_run),
+        )
+        print(preflight_summary.format_report())
+        if args.dry_run:
+            if not preflight_summary.is_ready:
+                print("\n[Dry-Run Notice] Preflight detected blocking issues above. Halting before training.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("\n[Dry-Run Complete] All preflight checks passed. Ready for training.")
+                return
+    except PreflightError as exc:
+        print(f"\n[PREFLIGHT HALTED] {exc}", file=sys.stderr)
+        sys.exit(1)
 
     clients: list[FederatedClient] = []
 
