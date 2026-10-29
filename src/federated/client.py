@@ -304,17 +304,47 @@ class SyntheticFederatedClient(FederatedClient):
         seed: int = 42,
         device: str | torch.device = "cpu",
         config: dict[str, Any] | None = None,
+        learnable: bool = False,
+        true_w: torch.Tensor | None = None,
     ) -> None:
-        """Create a synthetic client with deterministic in-memory tensors."""
+        """Create a synthetic client with deterministic in-memory tensors.
+
+        Args:
+            client_id: Identifier for the client.
+            num_train_samples: Number of synthetic training examples.
+            num_val_samples: Number of synthetic validation examples.
+            input_dim: Feature dimension.
+            model: PyTorch model. If None, instantiates a TinyModel with integer buffer.
+            seed: RNG seed for reproducible feature/label generation.
+            device: Computation device.
+            config: Optional configuration dictionary.
+            learnable: If True, generates labels via a ground-truth linear decision boundary
+                       y = I(x @ true_w > 0), creating a learnable classification problem.
+                       If False (default), generates independent random Bernoulli labels for smoke tests.
+            true_w: Optional ground-truth weight vector of shape (input_dim, 1) when learnable=True.
+        """
         rng = torch.Generator().manual_seed(seed)
 
-        # Generate synthetic features and binary targets
+        # Generate synthetic features
         train_x = torch.randn(num_train_samples, input_dim, generator=rng)
-        train_y = torch.randint(0, 2, (num_train_samples,), generator=rng).float()
-
         val_x = torch.randn(num_val_samples, input_dim, generator=rng)
-        # Ensure at least one positive and one negative sample for AUROC computation
-        val_y = torch.randint(0, 2, (num_val_samples,), generator=rng).float()
+
+        if learnable:
+            if true_w is None:
+                w_rng = torch.Generator().manual_seed(999)
+                true_w = torch.randn(input_dim, 1, generator=w_rng)
+            train_y = ((train_x @ true_w).squeeze(-1) > 0.0).float()
+            val_y = ((val_x @ true_w).squeeze(-1) > 0.0).float()
+        else:
+            train_y = torch.randint(0, 2, (num_train_samples,), generator=rng).float()
+            val_y = torch.randint(0, 2, (num_val_samples,), generator=rng).float()
+
+        # Ensure both classes are present in training and validation sets
+        if torch.sum(train_y == 1) == 0:
+            train_y[0] = 1.0
+        elif torch.sum(train_y == 0) == 0:
+            train_y[0] = 0.0
+
         if torch.sum(val_y == 1) == 0:
             val_y[0] = 1.0
         elif torch.sum(val_y == 0) == 0:

@@ -1,19 +1,55 @@
 """Federated parameter aggregation algorithms and state validation.
 
-Implements standard Federated Averaging (FedAvg) with strict validation:
-  - Exact parameter name, shape, and dtype matching across clients
-  - Strict absence of NaN or Inf values
-  - Positive sample-count weighting summing to 1.0
-  - Explicit handling of integer model buffers (such as BatchNorm num_batches_tracked)
-  - Decoupled functional interface for easy future extension (e.g. Capped FedAvg)
+Implements:
+  1. Standard Federated Averaging (FedAvg): sample-weighted aggregation p_k = n_k / N
+  2. Capped Federated Averaging (Capped FedAvg): capped sample weights q_k = min(p_k, c) / sum(min(p_j, c))
+  3. Strict parameter validation, state dictionary integrity, and integer buffer preservation
 """
 
 from __future__ import annotations
 
 import copy
-from typing import Any, Sequence
+import math
+from typing import Any, Callable, Sequence
 
 import torch
+
+
+def validate_cap_value(cap_value: Any) -> float:
+    """Validate cap parameter c for Capped FedAvg.
+
+    Enforces:
+      - Not None
+      - Real numeric type (float or int)
+      - Finite (not NaN or Inf)
+      - Strictly positive and at most 1.0: c in (0.0, 1.0]
+
+    Args:
+        cap_value: Candidate cap value.
+
+    Returns:
+        Validated float cap value.
+
+    Raises:
+        TypeError: If cap_value is not float or int.
+        ValueError: If cap_value is None, non-finite, <= 0.0, or > 1.0.
+    """
+    if cap_value is None:
+        raise ValueError(
+            "Cap value cannot be None for Capped FedAvg. Please provide a float in (0.0, 1.0]."
+        )
+    if not isinstance(cap_value, (int, float)):
+        raise TypeError(
+            f"Cap value must be a numeric float or int, got {type(cap_value).__name__}."
+        )
+    c = float(cap_value)
+    if math.isnan(c) or math.isinf(c):
+        raise ValueError(f"Cap value must be a finite real number, got {c}.")
+    if c <= 0.0:
+        raise ValueError(f"Cap value must be strictly positive (> 0.0), got {c}.")
+    if c > 1.0:
+        raise ValueError(f"Cap value must be <= 1.0, got {c}.")
+    return c
 
 
 def compute_fedavg_weights(
@@ -68,6 +104,81 @@ def compute_fedavg_weights(
         )
 
     return weights
+
+
+def compute_capped_fedavg_weights(
+    sample_counts: Sequence[int],
+    cap_value: float,
+    client_ids: Sequence[str] | None = None,
+) -> dict[str, float]:
+    """Compute normalized Capped FedAvg aggregation weights q_k.
+
+    Mathematical Formulation:
+      1. p_k = n_k / sum_{j=1}^K n_j
+      2. capped_weight_k = min(p_k, c)
+      3. q_k = capped_weight_k / sum_{j=1}^K capped_weight_j
+
+    Properties:
+      - For c >= max_k(p_k), q_k == p_k (recovers standard FedAvg).
+      - For c < max_k(p_k), the dominant client's weight is capped at c before
+        renormalization, distributing more proportional influence to minority silos.
+      - Non-negative: q_k >= 0 for all k.
+      - Unity constraint: sum_{k=1}^K q_k == 1.0 within numerical tolerance.
+
+    Args:
+        sample_counts: Sequence of integer sample counts for each participating client.
+        cap_value: Float upper bound c in (0.0, 1.0].
+        client_ids: Optional sequence of client identifiers.
+
+    Returns:
+        Dictionary mapping client_id to float weight q_k.
+
+    Raises:
+        ValueError or TypeError: If cap_value or sample_counts fail validation.
+    """
+    c = validate_cap_value(cap_value)
+
+    if not sample_counts:
+        raise ValueError("Cannot compute Capped FedAvg weights for an empty list of clients.")
+
+    if client_ids is None:
+        client_ids = [f"client_{i}" for i in range(len(sample_counts))]
+    elif len(client_ids) != len(sample_counts):
+        raise ValueError(
+            f"Length mismatch: {len(client_ids)} client_ids provided for {len(sample_counts)} sample counts."
+        )
+
+    # Step 1: Compute standard proportional weights p_k
+    p_weights = compute_fedavg_weights(sample_counts=sample_counts, client_ids=client_ids)
+
+    # Step 2: Apply cap min(p_k, c)
+    capped_unnormalized: dict[str, float] = {}
+    for cid in client_ids:
+        p_k = p_weights[cid]
+        capped_unnormalized[cid] = min(p_k, c)
+
+    # Step 3: Renormalize to sum to 1.0
+    sum_capped = sum(capped_unnormalized.values())
+    if sum_capped <= 0.0:
+        raise ValueError(
+            f"Sum of capped weights must be > 0, got {sum_capped}. Check cap_value={c}."
+        )
+
+    q_weights: dict[str, float] = {}
+    for cid in client_ids:
+        q_k = float(capped_unnormalized[cid] / sum_capped)
+        if q_k < 0.0:
+            raise ValueError(f"Negative capped weight calculated for client '{cid}': {q_k}")
+        q_weights[cid] = q_k
+
+    # Validate unity constraint
+    weight_sum = sum(q_weights.values())
+    if abs(weight_sum - 1.0) > 1e-6:
+        raise ValueError(
+            f"Capped FedAvg weights sum to {weight_sum:.8f}, which violates unity constraint (1.0)."
+        )
+
+    return q_weights
 
 
 def validate_client_state_dicts(
@@ -154,6 +265,58 @@ def validate_client_state_dicts(
                     raise ValueError(f"Inf value detected in parameter '{key}' of client '{cid}'.")
 
 
+def _aggregate_tensors_with_weights(
+    client_states: Sequence[dict[str, torch.Tensor]],
+    weights: dict[str, float],
+    client_ids: Sequence[str],
+) -> dict[str, torch.Tensor]:
+    """Internal helper to aggregate model state dictionaries using a pre-computed weight map.
+
+    Handles:
+      - Floating-point tensors (accumulated in float64 on CPU for numerical stability)
+      - Integer buffers (e.g. BatchNorm num_batches_tracked: float64 weighted sum rounded to nearest integer)
+      - Boolean buffers (thresholded majority at 0.5)
+    """
+    ref_state = client_states[0]
+    aggregated_state: dict[str, torch.Tensor] = {}
+
+    for key, ref_tensor in ref_state.items():
+        orig_dtype = ref_tensor.dtype
+
+        if ref_tensor.is_floating_point():
+            accum = torch.zeros(ref_tensor.shape, dtype=torch.float64, device="cpu")
+            for cid, state in zip(client_ids, client_states):
+                w_k = weights[cid]
+                client_tensor = state[key].detach().to(device="cpu", dtype=torch.float64)
+                accum += w_k * client_tensor
+
+            aggregated_state[key] = accum.to(dtype=orig_dtype)
+
+        elif orig_dtype in (torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8):
+            accum = torch.zeros(ref_tensor.shape, dtype=torch.float64, device="cpu")
+            for cid, state in zip(client_ids, client_states):
+                w_k = weights[cid]
+                client_tensor = state[key].detach().to(device="cpu", dtype=torch.float64)
+                accum += w_k * client_tensor
+
+            aggregated_state[key] = torch.round(accum).to(dtype=orig_dtype)
+
+        elif orig_dtype == torch.bool:
+            accum = torch.zeros(ref_tensor.shape, dtype=torch.float64, device="cpu")
+            for cid, state in zip(client_ids, client_states):
+                w_k = weights[cid]
+                client_tensor = state[key].detach().to(device="cpu", dtype=torch.float64)
+                accum += w_k * client_tensor
+            aggregated_state[key] = (accum >= 0.5).to(dtype=torch.bool)
+
+        else:
+            raise TypeError(
+                f"Unsupported parameter dtype '{orig_dtype}' for parameter '{key}'."
+            )
+
+    return aggregated_state
+
+
 def aggregate_fedavg(
     client_states: Sequence[dict[str, torch.Tensor]],
     sample_counts: Sequence[int],
@@ -190,52 +353,91 @@ def aggregate_fedavg(
     if client_ids is None:
         client_ids = [f"client_{i}" for i in range(len(client_states))]
 
-    # 1. Compute and validate aggregation weights p_k
+    # 1. Compute and validate standard weights p_k
     weights = compute_fedavg_weights(sample_counts, client_ids)
 
     # 2. Validate state dictionaries
     validate_client_state_dicts(client_states, client_ids)
 
-    ref_state = client_states[0]
-    aggregated_state: dict[str, torch.Tensor] = {}
-
-    # 3. Perform sample-weighted aggregation parameter-by-parameter
-    for key, ref_tensor in ref_state.items():
-        orig_dtype = ref_tensor.dtype
-
-        if ref_tensor.is_floating_point():
-            # Accumulate in float64 on CPU for numerical stability
-            accum = torch.zeros(ref_tensor.shape, dtype=torch.float64, device="cpu")
-            for cid, state in zip(client_ids, client_states):
-                p_k = weights[cid]
-                client_tensor = state[key].detach().to(device="cpu", dtype=torch.float64)
-                accum += p_k * client_tensor
-
-            aggregated_state[key] = accum.to(dtype=orig_dtype)
-
-        elif orig_dtype in (torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8):
-            # Integer-valued buffer (e.g. BatchNorm num_batches_tracked)
-            accum = torch.zeros(ref_tensor.shape, dtype=torch.float64, device="cpu")
-            for cid, state in zip(client_ids, client_states):
-                p_k = weights[cid]
-                client_tensor = state[key].detach().to(device="cpu", dtype=torch.float64)
-                accum += p_k * client_tensor
-
-            # Round to nearest integer and cast back to original integer dtype
-            aggregated_state[key] = torch.round(accum).to(dtype=orig_dtype)
-
-        elif orig_dtype == torch.bool:
-            # Boolean buffers: majority vote or ref value
-            accum = torch.zeros(ref_tensor.shape, dtype=torch.float64, device="cpu")
-            for cid, state in zip(client_ids, client_states):
-                p_k = weights[cid]
-                client_tensor = state[key].detach().to(device="cpu", dtype=torch.float64)
-                accum += p_k * client_tensor
-            aggregated_state[key] = (accum >= 0.5).to(dtype=torch.bool)
-
-        else:
-            raise TypeError(
-                f"Unsupported parameter dtype '{orig_dtype}' for parameter '{key}'."
-            )
-
+    # 3. Perform sample-weighted aggregation
+    aggregated_state = _aggregate_tensors_with_weights(client_states, weights, client_ids)
     return aggregated_state, weights
+
+
+def aggregate_capped_fedavg(
+    client_states: Sequence[dict[str, torch.Tensor]],
+    sample_counts: Sequence[int],
+    cap_value: float,
+    client_ids: Sequence[str] | None = None,
+) -> tuple[dict[str, torch.Tensor], dict[str, float]]:
+    """Aggregate client model parameters using Capped Federated Averaging (Capped FedAvg).
+
+    Mathematical Formulation:
+      p_k = n_k / sum_{j=1}^K n_j
+      capped_weight_k = min(p_k, c)
+      q_k = capped_weight_k / sum_{j=1}^K capped_weight_j
+      theta_{t+1} = sum_{k=1}^K q_k * theta_{t+1}^{(k)}
+
+    Args:
+        client_states: Sequence of client state dictionaries.
+        sample_counts: Number of training examples n_k actually used by each client.
+        cap_value: Upper bound on client aggregation weight, c in (0.0, 1.0].
+        client_ids: Optional list of client identifiers.
+
+    Returns:
+        Tuple of (aggregated_state_dict, client_weights_dict).
+
+    Raises:
+        ValueError, TypeError, or KeyError if inputs fail validation.
+    """
+    if len(client_states) != len(sample_counts):
+        raise ValueError(
+            f"Mismatched counts: {len(client_states)} client states vs {len(sample_counts)} sample counts."
+        )
+
+    if client_ids is None:
+        client_ids = [f"client_{i}" for i in range(len(client_states))]
+
+    # 1. Compute and validate capped weights q_k
+    weights = compute_capped_fedavg_weights(sample_counts, cap_value, client_ids)
+
+    # 2. Validate state dictionaries
+    validate_client_state_dicts(client_states, client_ids)
+
+    # 3. Perform sample-weighted aggregation
+    aggregated_state = _aggregate_tensors_with_weights(client_states, weights, client_ids)
+    return aggregated_state, weights
+
+
+def aggregate_parameters(
+    client_states: Sequence[dict[str, torch.Tensor]],
+    sample_counts: Sequence[int],
+    method: str = "fedavg",
+    cap_value: float | None = None,
+    client_ids: Sequence[str] | None = None,
+) -> tuple[dict[str, torch.Tensor], dict[str, float]]:
+    """Unified entrypoint dispatching between standard FedAvg and Capped FedAvg.
+
+    Args:
+        client_states: Sequence of client state dictionaries.
+        sample_counts: Sequence of sample counts.
+        method: Aggregation algorithm ('fedavg' or 'capped_fedavg').
+        cap_value: Cap value c, required if method is 'capped_fedavg'.
+        client_ids: Optional sequence of client identifiers.
+
+    Returns:
+        Tuple of (aggregated_state_dict, client_weights_dict).
+    """
+    canonical = method.lower().strip()
+    if canonical == "fedavg":
+        return aggregate_fedavg(client_states, sample_counts, client_ids)
+    elif canonical in ("capped_fedavg", "capped-fedavg", "capped"):
+        if cap_value is None:
+            raise ValueError(
+                "cap_value must be provided when aggregation method is 'capped_fedavg'."
+            )
+        return aggregate_capped_fedavg(client_states, sample_counts, cap_value, client_ids)
+    else:
+        raise ValueError(
+            f"Unknown aggregation method: '{method}'. Supported methods: 'fedavg', 'capped_fedavg'."
+        )

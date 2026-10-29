@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 from ..models.resnet import save_checkpoint
-from .aggregation import aggregate_fedavg
+from .aggregation import aggregate_capped_fedavg, aggregate_fedavg
 from .client import FederatedClient
 from .config import FederatedConfig
 
@@ -53,7 +53,20 @@ class FederatedServer:
         self.device = torch.device(device) if isinstance(device, str) else device
         self.global_model = global_model.to(self.device)
         self.config = config or FederatedConfig()
-        self.aggregation_fn = aggregation_fn
+
+        if aggregation_fn is aggregate_fedavg and self.config.aggregation_method == "capped_fedavg":
+            if self.config.cap_value is None:
+                raise ValueError("cap_value must be provided when aggregation_method is 'capped_fedavg'.")
+            cap = self.config.cap_value
+            self.aggregation_fn = lambda client_states, sample_counts, client_ids=None: aggregate_capped_fedavg(
+                client_states=client_states,
+                sample_counts=sample_counts,
+                cap_value=cap,
+                client_ids=client_ids,
+            )
+        else:
+            self.aggregation_fn = aggregation_fn
+
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 

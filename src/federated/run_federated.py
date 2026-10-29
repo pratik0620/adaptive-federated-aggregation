@@ -111,7 +111,18 @@ def main() -> None:
     device = torch.device(device_str)
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    out_dir = Path(fed_config.output_dir) / f"fedavg_{timestamp}"
+    if fed_config.aggregation_method == "capped_fedavg":
+        if fed_config.cap_value is None:
+            print("[Config Notice] aggregation_method='capped_fedavg' specified without --cap_value. Defaulting cap to 0.40.")
+            fed_config.cap_value = 0.40
+        else:
+            from src.federated.aggregation import validate_cap_value
+            fed_config.cap_value = validate_cap_value(fed_config.cap_value)
+        prefix = f"capped_fedavg_c{int(fed_config.cap_value * 100)}"
+    else:
+        prefix = "fedavg"
+
+    out_dir = Path(fed_config.output_dir) / f"{prefix}_{timestamp}"
     fed_config.output_dir = str(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,9 +133,15 @@ def main() -> None:
             fed_config.participating_clients = ["client_01_NIH", "client_02_CheXpert", "client_03_PadChest"]
 
     print("=" * 70)
-    print("  Federated Learning Baseline: Standard FedAvg")
+    if fed_config.aggregation_method == "capped_fedavg":
+        print(f"  Federated Learning Experiment: Capped FedAvg (Cap = {fed_config.cap_value})")
+    else:
+        print("  Federated Learning Baseline: Standard FedAvg")
     print("=" * 70)
     print(f"Output Directory:       {out_dir}")
+    print(f"Aggregation Method:     {fed_config.aggregation_method.upper()}")
+    if fed_config.cap_value is not None:
+        print(f"Cap Value (c):          {fed_config.cap_value}")
     print(f"Device:                 {device}")
     print(f"Rounds:                 {fed_config.num_rounds}")
     print(f"Local Epochs / Round:   {fed_config.local_epochs}")
@@ -238,7 +255,6 @@ def main() -> None:
         global_model=global_model,
         clients=clients,
         config=fed_config,
-        aggregation_fn=aggregate_fedavg,
         device=device,
         output_dir=out_dir,
     )
