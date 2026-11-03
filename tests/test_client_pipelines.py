@@ -299,3 +299,220 @@ def test_federated_checkpoint_compatibility_across_clients():
         dummy_feat = torch.randn(2, 2048)
         logits = global_model(dummy_feat)
         assert logits.shape == torch.Size([2, 1])
+
+
+# ---------------------------------------------------------------------------
+# Safety regression test: empty validation split
+# ---------------------------------------------------------------------------
+
+def _make_dummy_csv(tmp_path: Path, n_rows: int, label: int = 0) -> Path:
+    """Write a minimal processed-split CSV for PadChestDataset."""
+    records = []
+    img_dir = tmp_path / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(n_rows):
+        fname = f"dummy_{i:04d}.png"
+        # Write a tiny valid-looking PNG (1x1 white pixel)
+        import struct, zlib
+        def _png_1x1_white():
+            sig = b"\x89PNG\r\n\x1a\n"
+            def chunk(tag, data):
+                c = struct.pack(">I", len(data)) + tag + data
+                return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+            ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+            raw_row = b"\x00\xff\xff\xff"
+            idat = chunk(b"IDAT", zlib.compress(raw_row))
+            iend = chunk(b"IEND", b"")
+            return sig + ihdr + idat + iend
+        (img_dir / fname).write_bytes(_png_1x1_white())
+        records.append({
+            "image_id": fname.replace(".png", ""),
+            "patient_id": f"P{i:04d}",
+            "study_id": f"S{i:04d}",
+            "source": "PadChest",
+            "target": label,
+            "age": 50,
+            "sex": "M",
+            "view_position": "Frontal",
+            "projection": "PA",
+            "image_width": 1,
+            "image_height": 1,
+            "pixel_spacing_x": 0.14,
+            "pixel_spacing_y": 0.14,
+            "scanner_manufacturer": "SIEMENS",
+            "image_path": str(img_dir / fname),
+            "finding_labels": "normal",
+            "follow_up": "",
+        })
+    csv_path = tmp_path / "split.csv"
+    pd.DataFrame(records).to_csv(csv_path, index=False)
+    return csv_path
+
+
+def test_empty_val_loader_returns_none_loss(tmp_path):
+    """evaluate() must return loss=None (not 0.0) for an empty DataLoader."""
+    from torch.utils.data import DataLoader, TensorDataset
+    from src.trainer import ClientTrainer
+    from src.models.resnet import build_resnet50_binary
+
+    model = build_resnet50_binary(pretrained=False)
+
+    # Build a trivially small but non-empty train loader (1 batch)
+    train_ds = TensorDataset(torch.randn(2, 3, 224, 224), torch.zeros(2))
+    train_loader = DataLoader(train_ds, batch_size=2)
+
+    # Empty val loader
+    empty_ds = TensorDataset(torch.zeros(0, 3, 224, 224), torch.zeros(0))
+    empty_loader = DataLoader(empty_ds, batch_size=2)
+
+    trainer = ClientTrainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=empty_loader,
+        config={"dataset_name": "TestEmpty", "epochs": 1, "metric_to_optimize": "val_loss"},
+        output_dir=tmp_path / "run_none_loss",
+        device="cpu",
+    )
+    metrics = trainer.evaluate(empty_loader, split_name="val")
+
+    assert metrics["loss"] is None, (
+        f"evaluate() returned loss={metrics['loss']!r} for an empty loader; expected None"
+    )
+    assert metrics["total_samples"] == 0
+    assert metrics["auroc"] is None
+
+
+def test_empty_val_no_best_checkpoint(tmp_path):
+    """When val split is empty, best_checkpoint.pt must NOT be written and
+    best_epoch must remain -1 (no checkpoint selected)."""
+    from torch.utils.data import DataLoader, TensorDataset
+    from src.trainer import ClientTrainer
+    from src.models.resnet import build_resnet50_binary
+
+    model = build_resnet50_binary(pretrained=False)
+
+    train_ds = TensorDataset(torch.randn(4, 3, 224, 224), torch.zeros(4))
+    train_loader = DataLoader(train_ds, batch_size=4)
+
+    empty_ds = TensorDataset(torch.zeros(0, 3, 224, 224), torch.zeros(0))
+    empty_loader = DataLoader(empty_ds, batch_size=4)
+
+    output_dir = tmp_path / "run_empty_val"
+    config = {
+        "dataset_name": "TestEmptyVal",
+        "epochs": 2,
+        "lr": 1e-4,
+        "weight_decay": 1e-4,
+        "optimizer": "adamw",
+        "scheduler": "cosine",
+        "metric_to_optimize": "val_loss",
+        "device": "cpu",
+        "use_amp": False,
+        "total_official_val_images": 0,
+        "total_official_test_images": 0,
+    }
+
+    trainer = ClientTrainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=empty_loader,
+        test_loader=None,
+        config=config,
+        output_dir=output_dir,
+        device="cpu",
+    )
+    results = trainer.train()
+
+    # 1. best_checkpoint.pt must NOT exist
+    assert not (output_dir / "best_checkpoint.pt").is_file(), (
+        "best_checkpoint.pt was written even though the validation split was empty"
+    )
+
+    # 2. best_epoch should stay -1 (no epoch qualified)
+    assert results["best_epoch"] == -1, (
+        f"best_epoch={results['best_epoch']}; expected -1 when val is always empty"
+    )
+
+    # 3. val_metrics.json must report loss as None (JSON null)
+    import json
+    val_json = json.loads((output_dir / "val_metrics.json").read_text())
+    assert val_json.get("loss") is None, (
+        f"val_metrics.json contains loss={val_json.get('loss')!r}; expected null"
+    )
+
+    # 4. history.csv must record val_loss as blank/NaN, not 0.0
+    import pandas as pd
+    hist = pd.read_csv(output_dir / "history.csv")
+    assert hist["val_loss"].isna().all(), (
+        f"history.csv val_loss column contains non-null values: {hist['val_loss'].tolist()}"
+    )
+
+    # 5. final_checkpoint.pt must still exist (final weights always saved)
+    assert (output_dir / "final_checkpoint.pt").is_file(), (
+        "final_checkpoint.pt should always be saved at the end of training"
+    )
+
+
+def test_non_empty_val_preserves_checkpoint_selection(tmp_path):
+    """Regression guard: non-empty val split continues to produce
+    best_checkpoint.pt and correct loss values."""
+    from torch.utils.data import DataLoader, TensorDataset
+    from src.trainer import ClientTrainer
+    from src.models.resnet import build_resnet50_binary
+
+    model = build_resnet50_binary(pretrained=False)
+
+    train_ds = TensorDataset(torch.randn(4, 3, 224, 224), torch.zeros(4))
+    train_loader = DataLoader(train_ds, batch_size=4)
+
+    val_ds = TensorDataset(torch.randn(2, 3, 224, 224), torch.zeros(2))
+    val_loader = DataLoader(val_ds, batch_size=2)
+
+    output_dir = tmp_path / "run_with_val"
+    config = {
+        "dataset_name": "TestWithVal",
+        "epochs": 2,
+        "lr": 1e-4,
+        "weight_decay": 1e-4,
+        "optimizer": "adamw",
+        "scheduler": "cosine",
+        "metric_to_optimize": "val_loss",
+        "device": "cpu",
+        "use_amp": False,
+        "total_official_val_images": 2,
+        "total_official_test_images": 0,
+    }
+
+    trainer = ClientTrainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=None,
+        config=config,
+        output_dir=output_dir,
+        device="cpu",
+    )
+    results = trainer.train()
+
+    # 1. best_checkpoint.pt MUST exist when val data is available
+    assert (output_dir / "best_checkpoint.pt").is_file(), (
+        "best_checkpoint.pt was NOT written even though the validation split was non-empty"
+    )
+
+    # 2. best_epoch should be a real epoch (1 or 2)
+    assert results["best_epoch"] in (1, 2), (
+        f"best_epoch={results['best_epoch']} is not a valid epoch index"
+    )
+
+    # 3. val_metrics.json loss must be a real float (not null)
+    import json
+    val_json = json.loads((output_dir / "val_metrics.json").read_text())
+    assert val_json.get("loss") is not None, "val_metrics.json loss should not be null for non-empty val"
+    assert isinstance(val_json["loss"], float)
+
+    # 4. history.csv val_loss must be non-NaN for all epochs
+    import pandas as pd
+    hist = pd.read_csv(output_dir / "history.csv")
+    assert not hist["val_loss"].isna().any(), (
+        f"val_loss has NaN values in history.csv for non-empty val: {hist['val_loss'].tolist()}"
+    )
