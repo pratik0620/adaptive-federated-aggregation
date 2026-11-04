@@ -1,0 +1,71 @@
+# ==============================================================================
+# PadChest Partial Archive Configuration (Archives 0.zip & 1.zip — Client 03)
+# ==============================================================================
+# Use this configuration when training on the initial partial archive download
+# (0.zip and 1.zip containing ~6,028 raw images, ~1,534 accessible frontal images).
+#
+# Usage:
+#   python scripts/prepare_padchest.py --config configs/padchest_partial.yaml --verify_only
+#   python scripts/preflight_padchest.py --config configs/padchest_partial.yaml --allow_partial
+#   python scripts/train_padchest.py --config configs/padchest_partial.yaml
+# ==============================================================================
+
+dataset: PadChest
+client_id: client_03_PadChest
+target_disease: Pleural Effusion
+
+# Filesystem paths
+metadata: data/raw/PadChest/metadata/PADCHEST_chest_x_ray_images_labels_160K_01.02.19.csv.gz
+image_dir: data/raw/PadChest/images
+processed_dir: data/processed/PadChest
+output_dir: outputs/padchest
+run_name: padchest_partial_0_1_resnet50
+
+# Partial archive policy
+allow_partial: true
+sample_from_accessible: false
+
+# Binary Label Policy
+target_label: pleural effusion
+negative_label: normal
+
+# Frontal Projection Policy
+frontal_only: true
+include_ap_horizontal: true
+
+# Patient-Level Splitting
+seed: 42
+train_size: 0.8
+val_size: 0.1
+test_size: 0.1
+
+# Hyperparameters
+patient_limit: null
+patient_start: null
+patient_end: null
+
+epochs: 10
+batch_size: 32
+lr: 0.0001
+weight_decay: 0.0001
+optimizer: adamw
+scheduler: cosine
+metric_to_optimize: val_auroc
+pos_weight: null
+
+# Model Architecture
+model_architecture: resnet50
+classification_head: single_logit_binary
+img_size: 224
+pretrained: true
+dropout: 0.0
+
+# Hardware & System
+device: null
+num_workers: 0
+use_amp: false
+
+# Path Resolution
+strict_paths: false
+filter_missing: true
+dry_run: false

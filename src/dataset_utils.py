@@ -133,7 +133,6 @@ def standardize_chexpert(frame: pd.DataFrame, image_root: Path | str | None = No
     return ensure_standard_columns(result)
 
 
-
 def padchest_find_label_vocabulary(frame: pd.DataFrame, labels_column: str = "Labels") -> list[str]:
     vocabulary = {label for values in frame[labels_column].map(parse_label_list) for label in values}
     return sorted(vocabulary, key=normalize_label)
@@ -141,22 +140,57 @@ def padchest_find_label_vocabulary(frame: pd.DataFrame, labels_column: str = "La
 
 def padchest_clean_binary_labels(
     frame: pd.DataFrame,
-    target_label: str = "Pleural Effusion",
+    target_label: str | list[str] | set[str] = "Pleural Effusion",
     labels_column: str = "Labels",
-    negative_label: str = "normal",
+    negative_label: str | list[str] | set[str] = "normal",
 ) -> tuple[pd.DataFrame, dict]:
-    labels = frame[labels_column].map(parse_label_list)
-    normalized_target = normalize_label(target_label)
-    normalized_negative = normalize_label(negative_label)
+    """Clean and filter PadChest metadata to binary Pleural Effusion targets.
+
+    Positive cases:
+      - Rows where finding labels contain at least one normalized target label
+        (default: 'pleural effusion').
+      - Target encoded as 1.
+
+    Negative cases:
+      - Rows where finding labels contain solely the negative label(s)
+        (default: exactly ['normal']).
+      - Target encoded as 0.
+
+    Excluded cases:
+      - Non-effusion findings (e.g., COPD signs, aortic elongation, cardiomegaly).
+      - Ambiguous/uncertain findings (e.g., costophrenic angle blunting, pleural thickening).
+      - Missing, empty, or unlabelled records.
+      - Never converted into negative labels without explicit justification.
+    """
+    if isinstance(target_label, (list, set, tuple)):
+        normalized_targets = {normalize_label(t) for t in target_label}
+    else:
+        normalized_targets = {normalize_label(target_label)}
+
+    if isinstance(negative_label, (list, set, tuple)):
+        normalized_negatives = {normalize_label(n) for n in negative_label}
+    else:
+        normalized_negatives = {normalize_label(negative_label)}
+
+    raw_series = frame[labels_column] if labels_column in frame.columns else pd.Series(["[]"] * len(frame))
+    labels = raw_series.map(parse_label_list)
     normalized = labels.map(lambda values: {normalize_label(value) for value in values})
-    positive = normalized.map(lambda values: normalized_target in values)
-    negative = normalized.map(lambda values: values == {normalized_negative})
+
+    # Exact token set intersection prevents accidental substring matches (e.g. 'pericardial effusion')
+    positive = normalized.map(lambda values: bool(values & normalized_targets))
+    negative = normalized.map(lambda values: values == normalized_negatives)
+    excluded = ~(positive | negative)
+    empty_or_missing = raw_series.isna() | labels.map(lambda v: len(v) == 0)
+
     filtered = frame[positive | negative].copy()
     filtered["target"] = np.where(positive[filtered.index], 1, 0)
     return filtered, {
         "positive_before_filter": int(positive.sum()),
         "negative_before_filter": int(negative.sum()),
-        "excluded_ambiguous_before_filter": int((~(positive | negative)).sum()),
+        "excluded_ambiguous_before_filter": int(excluded.sum()),
+        "missing_or_empty_labels_count": int(empty_or_missing.sum()),
+        "target_labels": sorted(normalized_targets),
+        "negative_labels": sorted(normalized_negatives),
     }
 
 

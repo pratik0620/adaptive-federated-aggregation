@@ -39,22 +39,24 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 try:
+    from src.config_loader import load_config
     from src.data.padchest_dataset import (
         PadChestPathResolver,
         create_padchest_dataloaders,
         filter_padchest_frontal_views,
     )
     from src.data.patient_sampler import format_patient_selection_report, select_training_patients
-    from src.models.resnet import build_resnet50_binary
+    from src.models.resnet import build_resnet50_binary, load_checkpoint
     from src.trainer import ClientTrainer
 except ImportError:
+    from config_loader import load_config
     from data.padchest_dataset import (
         PadChestPathResolver,
         create_padchest_dataloaders,
         filter_padchest_frontal_views,
     )
     from data.patient_sampler import format_patient_selection_report, select_training_patients
-    from models.resnet import build_resnet50_binary
+    from models.resnet import build_resnet50_binary, load_checkpoint
     from trainer import ClientTrainer
 
 
@@ -281,11 +283,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_config_file(config_path: str | Path) -> dict[str, Any]:
-    """Load configuration from a JSON file."""
-    path = Path(config_path)
-    if not path.is_file():
-        raise FileNotFoundError(f"Configuration file not found: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    """Load configuration from a JSON or YAML file."""
+    return load_config(config_path)
 
 
 def main() -> None:
@@ -294,8 +293,13 @@ def main() -> None:
     # Load external config file if provided
     if args.config:
         file_config = load_config_file(args.config)
+        cli_flags_passed = set()
+        for a in sys.argv[1:]:
+            if a.startswith("--"):
+                clean_arg = a.lstrip("-").split("=")[0].replace("-", "_")
+                cli_flags_passed.add(clean_arg)
         for key, val in file_config.items():
-            if hasattr(args, key) and getattr(args, key) is None:
+            if hasattr(args, key) and key not in cli_flags_passed and val is not None:
                 setattr(args, key, val)
 
     # Pilot run defaults
@@ -604,6 +608,13 @@ def main() -> None:
     )
 
     results = trainer.train()
+
+    # Verify best checkpoint integrity
+    best_ckpt = output_dir / "best_checkpoint.pt"
+    if best_ckpt.is_file():
+        eval_model = build_resnet50_binary(pretrained=False, device=device)
+        load_checkpoint(eval_model, best_ckpt, strict=True)
+        print(f"  [CHECKPOINT VERIFIED] Verified {best_ckpt.name} with strict state_dict matching.")
 
     print("\n======================================================================")
     print("  PadChest Training Pipeline Execution Finished Successfully")
