@@ -1,5 +1,15 @@
 # PadChest Pipeline Implementation & Verification Summary
 
+> [!CAUTION]
+> **HISTORICAL / INVALIDATED SAMPLE ARTIFACT NOTICE:**
+> The initial audit and split statistics recorded in this document (e.g., 10 processed images, 7 frontal images from 24 sample records) were derived from a preliminary Kaggle validation sample (chest_x_ray_images_labels_sample.csv).
+>
+> Sample-derived manifests and statistics have been completely invalidated and removed from the active research pipeline.
+> The single source of truth for PadChest (Client 03) is the official full metadata file (PADCHEST_chest_x_ray_images_labels_160K_01.02.19.csv.gz, 160,861 records) yielding the verified 60,243 cohort (42,888 frontal images).
+> Please refer exclusively to docs/PADCHEST_TRAINING.md for current, verified documentation and executable commands.
+
+---
+
 This document summarizes the audit, implementation, and verification of the PadChest (Client 03) preprocessing and model training pipeline in the **Adaptive Federated Aggregation Algorithm for Disease Prediction** repository.
 
 ---

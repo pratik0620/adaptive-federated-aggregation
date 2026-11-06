@@ -1,47 +1,80 @@
-# PadChest Client 03 Partial Dataset Training Configuration
-# Hardware Profile: Intel Core i7-1355U, 16 GB RAM, CPU-only
-dataset_name: PadChest
+# ==============================================================================
+# PadChest Partial Archive Configuration (Archives 0.zip & 1.zip — Client 03)
+# ==============================================================================
+# Execution profile: Initial partial archive evaluation on Archives 0 & 1
+# (~6,028 raw images, ~1,540 accessible frontal radiographs).
+# CPU-optimized for 16 GB RAM environment.
+#
+# Usage:
+#   python scripts/prepare_padchest.py --config configs/padchest_partial.yaml --verify_only
+#   python scripts/preflight_padchest.py --config configs/padchest_partial.yaml --allow_partial
+#   python scripts/train_padchest.py --config configs/padchest_partial.yaml
+#   powershell -ExecutionPolicy Bypass -File .\run_padchest_pipeline.ps1
+# ==============================================================================
+
+# Dataset identification
 dataset: PadChest
+dataset_name: PadChest
+client_id: client_03_PadChest
 client_node: client_03_PadChest
 task: binary_classification
 target_disease: Pleural Effusion
 
-# Directory Paths
+# Filesystem paths
 data_root: .
-processed_dir: data/processed/PadChest
+metadata: data/raw/PadChest/metadata/PADCHEST_chest_x_ray_images_labels_160K_01.02.19.csv.gz
 image_dir: data/raw/PadChest/images
+processed_dir: data/processed/PadChest
 output_dir: outputs/padchest
 run_name: padchest_partial_resnet50
 
-# Frontal Radiograph Policy
+# Partial archive policy
+allow_partial: true
+sample_from_accessible: true
+
+# Binary Label Policy
+target_label: pleural effusion
+negative_label: normal
+
+# Frontal Projection Policy
 frontal_only: true
 include_ap_horizontal: true
 
-# Patient-Level Splitting & Sampling
-patient_limit: null
-sample_from_accessible: true
+# Patient-Level Splitting
 seed: 42
+train_size: 0.8
+val_size: 0.1
+test_size: 0.1
 
-# Training Hyperparameters (CPU-optimized for 16 GB RAM)
-device: cpu
-img_size: 224
-batch_size: 8
-num_workers: 2
-pin_memory: false
+# Hyperparameters (CPU-optimized for 16 GB RAM)
+patient_limit: null
+patient_start: null
+patient_end: null
+
 epochs: 1
+batch_size: 8
 lr: 0.0001
 weight_decay: 0.0001
 optimizer: adamw
 scheduler: cosine
 metric_to_optimize: val_auroc
+pos_weight: null
 
 # Model Architecture
 model_architecture: resnet50
 classification_head: single_logit_binary
 num_classes: 1
+img_size: 224
 pretrained: true
 dropout: 0.0
 
-# Path Resolution
-filter_missing: true
+# Hardware & System
+device: cpu
+num_workers: 2
+pin_memory: false
+use_amp: false
+
+# Path Resolution & Preflight
 strict_paths: false
+filter_missing: true
+dry_run: false
