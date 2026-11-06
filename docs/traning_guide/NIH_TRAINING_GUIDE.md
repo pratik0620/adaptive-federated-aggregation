@@ -3,7 +3,7 @@
 ## 1. Project Overview & Your Role
 
 - **Project:** Adaptive Federated Aggregation Algorithm for Disease Prediction using Heterogeneous Healthcare Data.
-- **Task:** Train a binary image classifier to predict **Pleural Effusion** from chest X-rays. Each teammate trains the same model architecture on a different dataset. The trained model checkpoint and evaluation results will be shared with the project lead for federated aggregation experiments.
+- **Task:** Train a binary image classifier to predict **Pleural Effusion** from chest X-rays. The federated coordinator broadcasts a shared model to each dataset client, collects locally trained model updates, and adaptively aggregates them.
 - **Your Responsibility:** Download the NIH ChestX-ray14 dataset, place the images in the expected folder, run the training commands below, and return the generated output artifacts.
 
 ---
@@ -111,3 +111,13 @@ After training finishes, all outputs are saved in `outputs/nih/<run_name>/`. Ple
 
 > [!CAUTION]
 > **Do NOT commit or upload images, dataset archives, or model checkpoints to GitHub.** Share the `outputs/nih/<run_name>/` folder via Google Drive, OneDrive, or the team's shared storage.
+
+## 7. Federated Training
+
+After all three clients' processed CSVs and images are available, run the coordinator from the repository root:
+
+```bash
+python src/train_federated.py --rounds 2 --local_epochs 1 --patient_limit 100 --device cpu --sample_from_accessible
+```
+
+The coordinator uses this client's local training entry point in each round. The default experiment also evaluates each final client model and the global model on each client's held-out test split. This is a single-machine simulation, not secure multi-hospital federation.

@@ -1,59 +1,100 @@
-# Adaptive Federated Aggregation Algorithm for Disease Prediction using Heterogeneous Healthcare Data
+# Adaptive Federated Aggregation for Chest X-ray Classification
 
-This repository prepares three public chest X-ray metadata sources as separate, leakage-safe federated clients. It does not train a model, implement FedAvg/FedProx, or redistribute medical images.
+This project trains a shared binary classifier for **Pleural Effusion** across three heterogeneous chest X-ray clients: NIH ChestX-ray14, CheXpert, and PadChest. It includes patient-level data preparation, client-local ResNet-50 training, conflict-aware federated aggregation, and cross-client test evaluation.
 
-## Objective
+The federated coordinator currently runs as a **single-machine simulation**: each client uses its own dataset directory, but all client processes and model updates are orchestrated locally. It does not provide secure transport, cryptographic aggregation, or a production multi-hospital deployment.
 
-The current clean binary experiment targets `Pleural Effusion`. A target can be changed in notebook configuration without rewriting the pipeline. Positive means the verified target label is present; negative means an explicitly clean negative label is present. Uncertain, missing, mixed, and otherwise ambiguous cases are excluded rather than silently treated as negative.
+## What is implemented
 
-## Datasets and access
+- Dataset preprocessing notebooks and leakage-safe patient splits.
+- Separate client training entry points: `src/train_nih.py`, `src/train_chexpert.py`, and `src/train_padchest.py`.
+- A common ResNet-50 binary classifier and training loop with validation-based checkpoint selection.
+- Federated rounds in `src/train_federated.py`: broadcast the current global checkpoint, train each client locally, and aggregate the returned model updates.
+- A `--aggregation fedavg` option for a sample-proportional FedAvg baseline, so results can be compared under the same client splits and evaluation protocol.
+- Adaptive conflict-aware aggregation in `src/federated.py`:
+  - Detects conflicting client update directions by pairwise cosine similarity.
+  - Projects conflicting components out of each update (PCGrad-style).
+  - Weights updates by `n_k ** 0.5` by default, reducing large-client dominance compared with sample-proportional FedAvg.
+  - Reports the client weights, pairwise similarities, and projected conflicts for every round.
+- Held-out cross-client evaluation by default: final local client models and the global model are each evaluated on every participating client's test split. Results are saved as `cross_client_generalization.json`.
 
-- NIH ChestX-ray14: obtain the images and metadata from the official NIH source.
-- CheXpert: obtain the dataset and access terms from Stanford ML Group.
-- PadChest: obtain the metadata/images from the official BCN/AQUA repository and verify its current terms.
+The adaptive rule is a project baseline, not a claim that the method has been clinically validated or proven superior. Compare it against FedAvg and other baselines on complete, permitted datasets before drawing performance conclusions.
 
-Access, download, and usage restrictions remain the user's responsibility. This repository contains preprocessing code and metadata structure only. Never commit downloaded images, archives, or restricted source files.
+## Data setup
 
-## Repository structure
+Obtain each dataset and its metadata through its official source and follow its access and use terms. This repository does not download or redistribute the medical images. Keep image archives, processed records, and model checkpoints out of Git.
 
-```text
-src/
-  config.py
-  dataset_utils.py
-  preprocessing_utils.py
-notebooks/
-  01_NIH_preprocessing.ipynb
-  02_CheXpert_preprocessing.ipynb
-  03_PadChest_preprocessing.ipynb
-  04_validate_federated_dataset.ipynb
+1. Prepare each dataset using its notebook in `notebooks/` (or use already prepared splits).
+2. Ensure each processed directory contains `train.csv`, `val.csv`, and `test.csv`:
+   - `data/processed/NIH/`
+   - `data/processed/CheXpert/`
+   - `data/processed/PadChest/`
+3. Place the corresponding local image files under `data/raw/` or provide explicit image roots to the training command.
+
+For details on supported layouts and data-specific constraints, see:
+
+- `docs/traning_guide/NIH_TRAINING_GUIDE.md`
+- `docs/traning_guide/CHEXPERT_TRAINING_GUIDE.md`
+- `docs/traning_guide/PADCHEST_TRAINING_GUIDE.md`
+
+The client loaders use frontal views by default for CheXpert and PadChest so all clients share a compatible view domain. Patient-level selection and missing-image reports are retained. If the locally available images are only a subset, pass `--sample_from_accessible` and treat resulting metrics as partial-subset results, not full-dataset benchmarks.
+
+## Install
+
+From the repository root:
+
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-Each preprocessing notebook writes metadata CSVs to a separate directory under `data/processed/`:
-`data/processed/NIH`, `data/processed/CheXpert`, and `data/processed/PadChest`. The `image_path` column points to the original mounted image; files are not copied.
+PyTorch may need a platform-specific installation if the version selected by `requirements.txt` is not compatible with your operating system or CUDA setup.
 
-## Google Colab
+## Run a federated pilot
 
-1. Open a notebook in Colab and mount Google Drive if the data is stored there.
-2. Clone this repository, or upload the repository files, and change the configuration paths in the first code cell.
-3. Install dependencies:
+Start with a small run to verify local data paths and the full round workflow:
 
-```python
-%pip install -r requirements.txt
+```powershell
+python src/train_federated.py --rounds 2 --local_epochs 1 --patient_limit 100 --batch_size 8 --device cpu --sample_from_accessible
 ```
 
-4. Run the notebook from top to bottom. Set `PROJECT_ROOT` to the cloned repository and use `pathlib.Path` for dataset paths.
-5. Run the validation notebook after all three client directories exist.
+Use `--device cuda` on a machine with a working CUDA-enabled PyTorch installation. Use `--aggregation fedavg` to run the FedAvg baseline with the same setup. The coordinator accepts per-client path overrides, for example:
 
-The notebooks do not download restricted datasets. They raise an actionable error when a configured metadata file or image directory is missing.
+```powershell
+python src/train_federated.py `
+  --rounds 5 `
+  --local_epochs 1 `
+  --device cuda `
+  --nih_image_dir "D:\datasets\NIH\images" `
+  --chexpert_image_dir "D:\datasets\CheXpert" `
+  --padchest_image_dir "D:\datasets\PadChest\images"
+```
 
-## Leakage and reproducibility
+Processed split directories can be overridden with `--nih_processed_dir`, `--chexpert_processed_dir`, and `--padchest_processed_dir`. Add `--skip_cross_client_eval` to omit the final cross-client test matrix when doing a quick training-only run. Use `--no-pretrained` to initialize without ImageNet weights (otherwise the initial ResNet-50 weights may need to be downloaded by torchvision).
 
-Splits are made at patient level with seed `42`; no patient can appear in more than one split. Study-level overlap is checked where study IDs exist. Counts are reported before filtering and sampling. Sampling is optional through `MAX_POSITIVE_SAMPLES` and `MAX_NEGATIVE_SAMPLES`, both defaulting to `None`.
+Individual clients can also be trained outside the coordinator; for example:
 
-## Standardized client schema
+```powershell
+python src/train_nih.py --pilot --sample_from_accessible --device cpu
+```
 
-All clients contain `image_id`, `patient_id`, `study_id`, `source`, `target`, `age`, `sex`, `view_position`, `projection`, `image_width`, `image_height`, `pixel_spacing_x`, `pixel_spacing_y`, `scanner_manufacturer`, and `image_path`. Dataset-specific metadata may be retained as additional columns. Missing source fields remain `NaN`.
+For a federated round, each client trainer accepts `--init_checkpoint PATH` to start from the coordinator's current global model. `--evaluate_only` evaluates that checkpoint on the client's held-out test split without training.
 
-## Dataset-specific verification
+## Output artifacts
 
-Before a real run, verify the exact local column names and label spelling in each downloaded release. PadChest label vocabularies and serialized list formatting require explicit inspection; the notebook prints matching vocabulary examples and stops if the requested target label is not found. NIH official split information is not assumed because releases may differ; patient-level deterministic splits are used unless an official split mapping is supplied.
+Runs are written under `outputs/federated/<run_name>/`, including:
+
+- `global_checkpoint.pt` and per-round global checkpoints.
+- `client_rounds/` with each client's local checkpoint, training history, and metrics.
+- `round_history.json` with client sample counts, adaptive weights, update similarities, and local validation metrics.
+- `cross_client_generalization.json` with each final local model and the global model evaluated on each client's held-out test split (unless disabled).
+- `config.json` with the run configuration.
+
+Evaluation reports flag incomplete test coverage. Do not describe partial archive metrics as official full-split results. Do not commit generated model checkpoints or medical data.
+
+## Tests
+
+Run the test suite from the repository root:
+
+```powershell
+python -m pytest -q .\tests
+```

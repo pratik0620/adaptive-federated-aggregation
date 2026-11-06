@@ -45,7 +45,7 @@ try:
         filter_padchest_frontal_views,
     )
     from src.data.patient_sampler import format_patient_selection_report, select_training_patients
-    from src.models.resnet import build_resnet50_binary
+    from src.models.resnet import build_resnet50_binary, load_checkpoint
     from src.trainer import ClientTrainer
 except ImportError:
     from data.padchest_dataset import (
@@ -54,7 +54,7 @@ except ImportError:
         filter_padchest_frontal_views,
     )
     from data.patient_sampler import format_patient_selection_report, select_training_patients
-    from models.resnet import build_resnet50_binary
+    from models.resnet import build_resnet50_binary, load_checkpoint
     from trainer import ClientTrainer
 
 
@@ -139,6 +139,13 @@ def parse_args() -> argparse.Namespace:
         dest="include_ap_horizontal",
         action="store_false",
         help="Exclude AP_horizontal views, restricting strictly to upright PA and AP.",
+    )
+
+    parser.add_argument(
+        "--init_checkpoint",
+        type=str,
+        default=None,
+        help="Optional global checkpoint used to initialize a federated local-training round.",
     )
 
     # Pilot and patient selection
@@ -276,6 +283,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Validate paths, patient splits, and write manifests without executing model training.",
     )
+    parser.add_argument(
+        "--evaluate_only",
+        action="store_true",
+        help="Evaluate --init_checkpoint on this client's held-out test split without training.",
+    )
 
     return parser.parse_args()
 
@@ -290,6 +302,8 @@ def load_config_file(config_path: str | Path) -> dict[str, Any]:
 
 def main() -> None:
     args = parse_args()
+    if args.evaluate_only and not args.init_checkpoint:
+        raise ValueError("--evaluate_only requires --init_checkpoint.")
 
     # Load external config file if provided
     if args.config:
@@ -532,7 +546,8 @@ def main() -> None:
         "model_architecture": "resnet50",
         "classification_head": "single_logit_binary",
         "num_classes": 1,
-        "pretrained_backbone": args.pretrained,
+        "pretrained_backbone": args.pretrained and args.init_checkpoint is None,
+        "initial_checkpoint": args.init_checkpoint,
         "dropout_rate": args.dropout,
         "img_size": args.img_size,
         "batch_size": args.batch_size,
@@ -586,10 +601,12 @@ def main() -> None:
     )
 
     model = build_resnet50_binary(
-        pretrained=args.pretrained,
+        pretrained=args.pretrained and args.init_checkpoint is None,
         dropout_rate=args.dropout,
         device=device,
     )
+    if args.init_checkpoint:
+        load_checkpoint(args.init_checkpoint, model=model, device=device)
 
     # 5. Initialize Trainer and Execute Training Loop
     print("\n[5/5] Initializing ClientTrainer for PadChest...")
@@ -602,6 +619,17 @@ def main() -> None:
         output_dir=output_dir,
         device=device,
     )
+
+    if args.evaluate_only:
+        if not loaders.get("test"):
+            raise RuntimeError("Cannot evaluate checkpoint: this client's test split is empty.")
+        test_metrics = trainer.evaluate(loaders["test"], split_name="test")
+        trainer.annotate_test_coverage(test_metrics)
+        (output_dir / "test_metrics.json").write_text(
+            json.dumps(test_metrics, indent=2, default=str), encoding="utf-8"
+        )
+        print(f"[Evaluation Complete] Metrics saved to {output_dir / 'test_metrics.json'}")
+        return
 
     results = trainer.train()
 

@@ -169,6 +169,37 @@ class ClientTrainer:
         metrics["split"] = split_name
         return metrics
 
+    def annotate_test_coverage(self, metrics: dict[str, Any]) -> dict[str, Any]:
+        """Mark whether held-out metrics cover the complete official test split."""
+        expected_count = int(self.config.get("total_official_test_images", 14519))
+        evaluated_count = int(metrics.get("total_samples", 0))
+        is_complete = expected_count > 0 and evaluated_count >= expected_count
+        coverage = evaluated_count / expected_count * 100.0 if expected_count > 0 else 0.0
+        metrics.update(
+            {
+                "is_official_full_test": is_complete,
+                "evaluated_samples": evaluated_count,
+                "total_official_split_samples": expected_count,
+                "coverage_percentage": coverage,
+                "missing_samples_count": max(0, expected_count - evaluated_count),
+                "evaluation_status": (
+                    "OFFICIAL_FULL_TEST_BENCHMARK"
+                    if is_complete
+                    else "PARTIAL_ARCHIVE_SUBSET_UNOFFICIAL"
+                ),
+            }
+        )
+        if not is_complete:
+            disclaimer = (
+                f"UNOFFICIAL: Evaluated on an incomplete accessible subset "
+                f"({evaluated_count:,} / {expected_count:,} images, {coverage:.2f}% coverage). "
+                f"{metrics['missing_samples_count']:,} images are missing from the local archive. "
+                "These metrics MUST NOT be reported as the official full-test benchmark."
+            )
+            metrics["disclaimer"] = disclaimer
+            metrics.setdefault("warnings", []).append(disclaimer)
+        return metrics
+
     def train(self) -> dict[str, Any]:
         """Execute full training loop, model selection, and artifact saving."""
         print(f"\n[Training] Starting {self.dataset_name} ResNet-50 training for {self.epochs} epochs on device: {self.device}")
@@ -302,32 +333,15 @@ class ClientTrainer:
 
             test_metrics = self.evaluate(self.test_loader, split_name="test")
 
-            # Check coverage vs official split size
-            total_official_test = int(self.config.get("total_official_test_images", 14519))
-            evaluated_count = int(test_metrics.get("total_samples", len(self.test_loader.dataset)))
-            is_official_full = (evaluated_count >= total_official_test)
-            coverage_pct = (evaluated_count / total_official_test * 100.0) if total_official_test > 0 else 0.0
-
-            test_metrics["is_official_full_test"] = is_official_full
-            test_metrics["evaluated_samples"] = evaluated_count
-            test_metrics["total_official_split_samples"] = total_official_test
-            test_metrics["coverage_percentage"] = coverage_pct
-            test_metrics["missing_samples_count"] = max(0, total_official_test - evaluated_count)
-
-            if is_official_full:
-                test_metrics["evaluation_status"] = "OFFICIAL_FULL_TEST_BENCHMARK"
+            self.annotate_test_coverage(test_metrics)
+            if test_metrics["is_official_full_test"]:
                 title = f"Official {self.dataset_name} Test Split Benchmark Results"
             else:
-                test_metrics["evaluation_status"] = "PARTIAL_ARCHIVE_SUBSET_UNOFFICIAL"
-                disclaimer = (
-                    f"UNOFFICIAL: Evaluated on an incomplete accessible subset "
-                    f"({evaluated_count:,} / {total_official_test:,} images, {coverage_pct:.2f}% coverage). "
-                    f"{test_metrics['missing_samples_count']:,} images missing from local archives. "
-                    "These metrics MUST NOT be reported or published as the official full-test benchmark."
+                title = (
+                    f"[UNOFFICIAL] {self.dataset_name} Partial Test Subset "
+                    f"({test_metrics['evaluated_samples']:,} / "
+                    f"{test_metrics['total_official_split_samples']:,} images)"
                 )
-                test_metrics["disclaimer"] = disclaimer
-                test_metrics.setdefault("warnings", []).append(disclaimer)
-                title = f"[UNOFFICIAL] {self.dataset_name} Partial Test Subset ({evaluated_count:,} / {total_official_test:,} images)"
 
             (self.output_dir / "test_metrics.json").write_text(
                 json.dumps(test_metrics, indent=2, default=str), encoding="utf-8"
