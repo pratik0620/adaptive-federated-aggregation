@@ -1,0 +1,47 @@
+# PadChest Client 03 Partial Dataset Training Configuration
+# Hardware Profile: Intel Core i7-1355U, 16 GB RAM, CPU-only
+dataset_name: PadChest
+dataset: PadChest
+client_node: client_03_PadChest
+task: binary_classification
+target_disease: Pleural Effusion
+
+# Directory Paths
+data_root: .
+processed_dir: data/processed/PadChest
+image_dir: data/raw/PadChest/images
+output_dir: outputs/padchest
+run_name: padchest_partial_resnet50
+
+# Frontal Radiograph Policy
+frontal_only: true
+include_ap_horizontal: true
+
+# Patient-Level Splitting & Sampling
+patient_limit: null
+sample_from_accessible: true
+seed: 42
+
+# Training Hyperparameters (CPU-optimized for 16 GB RAM)
+device: cpu
+img_size: 224
+batch_size: 8
+num_workers: 2
+pin_memory: false
+epochs: 1
+lr: 0.0001
+weight_decay: 0.0001
+optimizer: adamw
+scheduler: cosine
+metric_to_optimize: val_auroc
+
+# Model Architecture
+model_architecture: resnet50
+classification_head: single_logit_binary
+num_classes: 1
+pretrained: true
+dropout: 0.0
+
+# Path Resolution
+filter_missing: true
+strict_paths: false

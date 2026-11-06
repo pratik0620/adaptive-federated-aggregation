@@ -219,6 +219,18 @@ def parse_args() -> argparse.Namespace:
         help="Number of DataLoader worker processes (0 is safest on Windows).",
     )
     parser.add_argument(
+        "--pin_memory",
+        action="store_true",
+        default=None,
+        help="Enable DataLoader pin_memory (defaults to True on CUDA, False on CPU).",
+    )
+    parser.add_argument(
+        "--no-pin-memory",
+        dest="pin_memory",
+        action="store_false",
+        help="Disable DataLoader pin_memory.",
+    )
+    parser.add_argument(
         "--use_amp",
         action="store_true",
         help="Use automatic mixed precision (AMP fp16) on CUDA.",
@@ -281,10 +293,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_config_file(config_path: str | Path) -> dict[str, Any]:
-    """Load configuration from a JSON file."""
+    """Load configuration from a JSON or YAML file."""
     path = Path(config_path)
     if not path.is_file():
         raise FileNotFoundError(f"Configuration file not found: {path}")
+    if path.suffix.lower() in (".yaml", ".yml"):
+        import yaml
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -295,7 +311,8 @@ def main() -> None:
     if args.config:
         file_config = load_config_file(args.config)
         for key, val in file_config.items():
-            if hasattr(args, key) and getattr(args, key) is None:
+            cli_flag_passed = any(arg == f"--{key}" or arg.startswith(f"--{key}=") for arg in sys.argv[1:])
+            if hasattr(args, key) and not cli_flag_passed:
                 setattr(args, key, val)
 
     # Pilot run defaults
@@ -575,6 +592,7 @@ def main() -> None:
 
     # 4. Construct DataLoaders and Model Architecture
     print("\n[4/5] Building DataLoaders and ResNet-50 binary architecture...")
+    pin_memory = args.pin_memory if args.pin_memory is not None else (device.type == "cuda")
     loaders = create_padchest_dataloaders(
         train_df=resolved_train_df,
         val_df=resolved_val_df,
@@ -582,7 +600,7 @@ def main() -> None:
         batch_size=args.batch_size,
         img_size=args.img_size,
         num_workers=args.num_workers,
-        pin_memory=(device.type == "cuda"),
+        pin_memory=pin_memory,
     )
 
     model = build_resnet50_binary(

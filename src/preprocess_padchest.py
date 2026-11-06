@@ -99,7 +99,7 @@ REQUIRED_COLUMNS = ["ImageID", "Labels"]
 # ---------------------------------------------------------------------------
 
 def _locate_metadata(repo_root: Path) -> tuple[Path | None, bool]:
-    """Return (path, is_sample). Full 160K CSV takes priority over sample."""
+    """Return (path, is_sample). Full 160K CSV (.csv or .csv.gz) takes priority over sample."""
     full_csv = (
         repo_root
         / "data"
@@ -107,6 +107,14 @@ def _locate_metadata(repo_root: Path) -> tuple[Path | None, bool]:
         / "PadChest"
         / "metadata"
         / "PADCHEST_chest_x_ray_images_labels_160K_01.02.19.csv"
+    )
+    full_csv_gz = (
+        repo_root
+        / "data"
+        / "raw"
+        / "PadChest"
+        / "metadata"
+        / "PADCHEST_chest_x_ray_images_labels_160K_01.02.19.csv.gz"
     )
     sample_csv = (
         repo_root
@@ -118,6 +126,8 @@ def _locate_metadata(repo_root: Path) -> tuple[Path | None, bool]:
     )
     if full_csv.exists():
         return full_csv, False
+    if full_csv_gz.exists():
+        return full_csv_gz, False
     if sample_csv.exists():
         return sample_csv, True
     return None, False
