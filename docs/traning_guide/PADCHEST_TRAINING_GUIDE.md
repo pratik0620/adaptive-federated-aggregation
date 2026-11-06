@@ -75,23 +75,48 @@ pip install -r requirements.txt
 pip install torchvision pillow
 ```
 
-### Command 1: Preflight Verification (No Training)
+### Command 1: Dataset Preprocessing (Generate Split CSVs)
+To generate or regenerate the standard 17-column split CSVs (`train.csv`, `val.csv`, `test.csv`) and `summary.json`:
+
+```bash
+# Standard preprocessing (auto-detects full 160K or Kaggle sample CSV):
+python src/preprocess_padchest.py
+
+# Or dry-run without writing files:
+python src/preprocess_padchest.py --dry_run
+```
+
+> [!NOTE]
+> **24-Image Sample Limitation:**  
+> When running against the 24-image Kaggle sample metadata, the pipeline filters for frontal views and valid binary labels, yielding **8 train, 1 validation, and 1 test** records. Frontal filtering retains **6 train images (1 positive, 5 negative), 0 validation images (the 1 record is Lateral and excluded), and 1 test image (negative)**. This sample is strictly for mechanical smoke testing; evaluation metrics (AUROC) are undefined or non-informative.
+
+### Command 2: Preflight Verification (No Training)
 Checks that your dataset paths are resolved correctly, audits image availability, and applies frontal filtering without training a model:
 
 ```bash
 python src/train_padchest.py --pilot --dry_run
 ```
 
-### Command 2: Small Pilot Run (**Actually Trains Model**)
-Trains a quick model on 100 patients for 2 epochs. If you only downloaded the sample dataset, add `--sample_from_accessible`:
+### Command 3: Pipeline Smoke Test (Existing 24 Sample Images)
+Runs a 2-epoch CPU smoke test validating the entire training, dataloading, and export pipeline:
+
+```bash
+python src/train_padchest.py --pilot --sample_from_accessible --device cpu --metric_to_optimize val_loss
+```
+
+> [!IMPORTANT]
+> `--metric_to_optimize val_loss` is used here purely as a smoke-test plumbing flag so that `best_checkpoint.pt` is generated despite the validation loader having 0 frontal samples (`val_loss = 0.0`). It is **not** a valid measure of model generalization.
+
+### Command 4: Pilot Training Run (Larger Downloaded Dataset)
+Trains a quick model on 100 patients for 2 epochs once more frontal images are downloaded:
 
 ```bash
 python src/train_padchest.py --pilot --sample_from_accessible --device cpu
 ```
 *(Replace `cpu` with `cuda` if you have an NVIDIA GPU).*
 
-### Command 3: Larger Training Run (**Actually Trains Model**)
-Trains on a configurable number of unique training patients (e.g. 500 patients for 5 epochs):
+### Command 5: Full Client Training Run (Official Experiments)
+Trains on a configurable number of unique training patients (e.g. 500 patients for 5 epochs) with full validation AUROC model selection:
 
 ```bash
 python src/train_padchest.py --patient_limit 500 --epochs 5 --batch_size 32 --device cpu
@@ -103,7 +128,7 @@ python src/train_padchest.py --patient_limit 500 --epochs 5 --batch_size 32 --de
 
 After training finishes, all outputs are saved in `outputs/padchest/<run_name>/`. Please zip and share this folder:
 
-- `best_checkpoint.pt` — Best model weights based on validation AUROC.
+- `best_checkpoint.pt` — Best model weights (compatible with federated aggregation).
 - `final_checkpoint.pt` — Final epoch model checkpoint.
 - `history.csv` — Training loss, validation loss, and AUROC for each epoch.
 - `val_metrics.json` & `test_metrics.json` — Evaluated performance metrics.
