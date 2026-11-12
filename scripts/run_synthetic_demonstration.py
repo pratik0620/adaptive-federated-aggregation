@@ -126,11 +126,13 @@ def run_experiment(
     initial_model: nn.Module,
     num_rounds: int = 5,
     local_epochs: int = 2,
+    batch_size: int = 16,
     lr: float = 0.02,
+    seed: int = 42,
     output_dir: Path | None = None,
 ) -> tuple[FederatedServer, list[dict[str, Any]]]:
     """Run a reproducible federated experiment with specified aggregation method."""
-    clients = build_client_instances(datasets, initial_model)
+    clients = build_client_instances(datasets, initial_model, batch_size=batch_size)
     global_model = copy.deepcopy(initial_model)
 
     config = FederatedConfig(
@@ -139,8 +141,10 @@ def run_experiment(
         cap_value=cap_value,
         num_rounds=num_rounds,
         local_epochs=local_epochs,
+        batch_size=batch_size,
         lr=lr,
         optimizer="adamw",
+        seed=seed,
         output_dir=str(output_dir or "outputs/synthetic_demonstration"),
         participating_clients=list(datasets.keys()),
     )
@@ -173,6 +177,7 @@ def main() -> None:
     dim = 16
     num_rounds = 5
     local_epochs = 2
+    batch_size = 16
     lr = 0.02
     cap_values = [0.30, 0.40, 0.50, 0.60]
 
@@ -195,7 +200,9 @@ def main() -> None:
         initial_model=initial_model,
         num_rounds=num_rounds,
         local_epochs=local_epochs,
+        batch_size=batch_size,
         lr=lr,
+        seed=seed,
         output_dir=out_dir / "fedavg_run",
     )
 
@@ -212,7 +219,9 @@ def main() -> None:
             initial_model=initial_model,
             num_rounds=num_rounds,
             local_epochs=local_epochs,
+            batch_size=batch_size,
             lr=lr,
+            seed=seed,
             output_dir=out_dir / f"capped_fedavg_c{int(c * 100)}_run",
         )
         capped_histories[c] = hist
@@ -318,6 +327,11 @@ def main() -> None:
         "notice": "Synthetic demonstration for faculty presentation. Evaluates weighting mechanics on synthetic data, not real patient radiographs.",
         "seed": seed,
         "input_dim": dim,
+        "num_rounds": num_rounds,
+        "local_epochs": local_epochs,
+        "batch_size": batch_size,
+        "lr": lr,
+        "optimizer": "adamw",
         "cap_values_evaluated": cap_values,
         "client_sample_distribution": {cid: len(datasets[cid][0]) for cid in datasets},
         "sensitivity_summary": sensitivity_rows,
@@ -339,7 +353,7 @@ def main() -> None:
 - **Fairness Controls:**
   - Identical initial model parameters across all runs.
   - Identical client training and validation splits.
-  - Identical local training: AdamW, $\\text{{lr}} = 0.02$, 2 local epochs per round.
+  - Identical local training: AdamW, $\\text{{lr}} = 0.02$, batch size {batch_size}, {local_epochs} local epochs per round.
   - 5 communication rounds per run.
 
 ## 2. Aggregation Weights vs. Cap Value ($c$)

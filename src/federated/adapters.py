@@ -307,8 +307,8 @@ def build_padchest_client(
     )
 
     val_evaluated_count = len(resolved_val)
-    total_official_val = 10000  # standard split size
-    is_official_full_val = val_evaluated_count >= total_official_val
+    total_official_val = len(val_df)
+    is_official_full_val = (total_official_val > 0) and (val_evaluated_count >= total_official_val)
     missing_samples = max(0, total_official_val - val_evaluated_count)
     coverage_pct = (val_evaluated_count / total_official_val * 100.0) if total_official_val > 0 else 0.0
 

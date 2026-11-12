@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import platform
 import time
 from pathlib import Path
@@ -134,15 +135,20 @@ class FederatedServer:
 
         if participating_client_ids is None:
             active_cids = list(self.clients.keys())
+            if not active_cids:
+                raise ValueError("No active clients available to participate in this round.")
         else:
-            active_cids = [cid for cid in participating_client_ids if cid in self.clients]
-
-        if not active_cids:
-            # Fall back to all registered clients if none matched
-            active_cids = list(self.clients.keys())
-
-        if not active_cids:
-            raise ValueError("No active clients available to participate in this round.")
+            seen_cids: set[str] = set()
+            active_cids = []
+            for cid in participating_client_ids:
+                if cid in self.clients and cid not in seen_cids:
+                    active_cids.append(cid)
+                    seen_cids.add(cid)
+            if not active_cids:
+                raise ValueError(
+                    f"None of the requested participating clients {list(participating_client_ids)} "
+                    f"match registered clients {list(self.clients.keys())}."
+                )
 
         print(f"Participating clients ({len(active_cids)}): {', '.join(active_cids)}")
 
@@ -232,21 +238,29 @@ class FederatedServer:
             config=self.config.to_dict(),
         )
 
-        # Check for new best checkpoint
-        current_metric = mean_val_auroc if mean_val_auroc is not None else -1.0
-        if current_metric > self.best_metric_value:
-            self.best_metric_value = current_metric
-            self.best_round = round_idx
-            best_ckpt_path = self.output_dir / "best_global_checkpoint.pt"
-            save_checkpoint(
-                checkpoint_path=best_ckpt_path,
-                model=self.global_model,
-                epoch=round_idx,
-                best_val_metric=self.best_metric_value,
-                metric_name="mean_val_auroc",
-                config=self.config.to_dict(),
+        # Check for new best checkpoint only when a finite validation metric is available
+        if mean_val_auroc is not None and math.isfinite(mean_val_auroc):
+            if mean_val_auroc > self.best_metric_value:
+                self.best_metric_value = mean_val_auroc
+                self.best_round = round_idx
+                best_ckpt_path = self.output_dir / "best_global_checkpoint.pt"
+                save_checkpoint(
+                    checkpoint_path=best_ckpt_path,
+                    model=self.global_model,
+                    epoch=round_idx,
+                    best_val_metric=self.best_metric_value,
+                    metric_name="mean_val_auroc",
+                    config=self.config.to_dict(),
+                )
+                print(
+                    f"  --> Saved new best global checkpoint at round {round_idx} "
+                    f"(Mean Val AUROC: {mean_val_auroc:.4f})"
+                )
+        else:
+            print(
+                f"  [Checkpoint Notice] Round {round_idx}: Mean Val AUROC unavailable; "
+                "skipping best checkpoint selection."
             )
-            print(f"  --> Saved new best global checkpoint at round {round_idx} (Mean Val AUROC: {current_metric:.4f})")
 
         return round_summary
 
@@ -261,7 +275,13 @@ class FederatedServer:
           - best_global_checkpoint.pt: Checkpoint with optimal validation AUROC.
         """
         rounds = num_rounds or self.config.num_rounds
-        print(f"\n[Federated Server] Starting {rounds} rounds of standard FedAvg training.")
+        if self.config.aggregation_method == "capped_fedavg":
+            agg_desc = f"Capped FedAvg (cap={self.config.cap_value})"
+        elif self.config.aggregation_method == "fedavg":
+            agg_desc = "Standard FedAvg"
+        else:
+            agg_desc = str(self.config.aggregation_method)
+        print(f"\n[Federated Server] Starting {rounds} rounds of {agg_desc} training.")
         total_start = time.time()
 
         # Save config
@@ -274,15 +294,23 @@ class FederatedServer:
             )
 
         total_time = time.time() - total_start
+        has_valid_best = self.best_round > 0 and math.isfinite(self.best_metric_value)
+        best_metric_export = self.best_metric_value if has_valid_best else None
+        best_round_export = self.best_round if has_valid_best else None
+        best_ckpt_path = self.output_dir / "best_global_checkpoint.pt"
+
         print(f"\n[Federated Training Complete] Completed {rounds} rounds in {total_time:.1f}s.")
-        print(f"Best Round: {self.best_round} | Best Mean Val AUROC: {self.best_metric_value:.4f}")
+        if has_valid_best:
+            print(f"Best Round: {self.best_round} | Best Mean Val AUROC: {self.best_metric_value:.4f}")
+        else:
+            print("Best Round: N/A | Best Mean Val AUROC: N/A (no valid validation AUROC observed)")
 
         # Save final checkpoint
         save_checkpoint(
             checkpoint_path=self.output_dir / "final_global_checkpoint.pt",
             model=self.global_model,
             epoch=rounds,
-            best_val_metric=self.best_metric_value,
+            best_val_metric=best_metric_export,
             metric_name="mean_val_auroc",
             config=self.config.to_dict(),
         )
@@ -301,11 +329,11 @@ class FederatedServer:
             "cap_value": self.config.cap_value,
             "total_rounds_completed": rounds,
             "total_training_time_seconds": total_time,
-            "best_round": self.best_round,
-            "best_metric_value": self.best_metric_value,
+            "best_round": best_round_export,
+            "best_metric_value": best_metric_export,
             "metric_optimized": self.config.metric_to_optimize,
             "checkpoint_paths": {
-                "best_checkpoint": str(self.output_dir / "best_global_checkpoint.pt"),
+                "best_checkpoint": str(best_ckpt_path) if best_ckpt_path.is_file() else None,
                 "final_checkpoint": str(self.output_dir / "final_global_checkpoint.pt"),
             },
             "config": self.config.to_dict(),

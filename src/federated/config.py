@@ -75,71 +75,71 @@ def create_federated_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--experiment_name",
         type=str,
-        default="federated_baseline_fedavg",
-        help="Experiment run identifier.",
+        default=None,
+        help="Experiment run identifier (default: federated_baseline_fedavg).",
     )
     parser.add_argument(
         "--initialization_id",
         type=str,
-        default="imagenet_pretrained_resnet50",
-        help="Identifier for the initial model state or checkpoint.",
+        default=None,
+        help="Identifier for the initial model state or checkpoint (default: imagenet_pretrained_resnet50).",
     )
     parser.add_argument(
         "--aggregation_method",
         type=str,
-        default="fedavg",
+        default=None,
         choices=["fedavg", "capped_fedavg"],
-        help="Parameter aggregation algorithm.",
+        help="Parameter aggregation algorithm (default: fedavg).",
     )
     parser.add_argument(
         "--cap_value",
         type=float,
         default=None,
-        help="Optional upper bound on client aggregation weight (for Capped FedAvg).",
+        help="Optional pre-normalization clipping threshold c in (0, 1.0] (for Capped FedAvg).",
     )
     parser.add_argument(
         "--rounds",
         dest="num_rounds",
         type=int,
-        default=5,
-        help="Total number of federated communication rounds.",
+        default=None,
+        help="Total number of federated communication rounds (default: 5).",
     )
     parser.add_argument(
         "--local_epochs",
         type=int,
-        default=1,
-        help="Number of local training epochs per client per round.",
+        default=None,
+        help="Number of local training epochs per client per round (default: 1).",
     )
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=32,
-        help="Mini-batch size for client local training.",
+        default=None,
+        help="Mini-batch size for client local training (default: 32).",
     )
     parser.add_argument(
         "--lr",
         type=float,
-        default=1e-4,
-        help="Local learning rate.",
+        default=None,
+        help="Local learning rate (default: 1e-4).",
     )
     parser.add_argument(
         "--optimizer",
         type=str,
-        default="adamw",
+        default=None,
         choices=["adamw", "sgd", "adam"],
-        help="Client optimizer.",
+        help="Client optimizer (default: adamw).",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
-        help="Random seed for reproducibility.",
+        default=None,
+        help="Random seed for reproducibility (default: 42).",
     )
     parser.add_argument(
         "--device",
         type=str,
-        default="cpu",
-        help="Execution device ('cpu' or 'cuda').",
+        default=None,
+        help="Execution device ('cpu' or 'cuda', default: cpu).",
     )
     parser.add_argument(
         "--clients",
@@ -151,8 +151,8 @@ def create_federated_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="outputs/federated",
-        help="Output directory for checkpoints and metrics.",
+        default=None,
+        help="Output directory for checkpoints and metrics (default: outputs/federated).",
     )
     parser.add_argument(
         "--patient_limit",
@@ -161,3 +161,44 @@ def create_federated_arg_parser() -> argparse.ArgumentParser:
         help="Optional max unique patients per client (for pilot experiments).",
     )
     return parser
+
+
+def resolve_federated_config(args: argparse.Namespace) -> FederatedConfig:
+    """Resolve FederatedConfig from optional JSON config with explicit CLI overrides.
+
+    Args:
+        args: Parsed CLI namespace from ``create_federated_arg_parser()``.
+
+    Returns:
+        Resolved ``FederatedConfig`` where JSON values are preserved unless
+        the corresponding CLI argument was explicitly provided.
+    """
+    config_dict: dict[str, Any] = {}
+    config_path = getattr(args, "config", None)
+    if config_path:
+        cfg_path = Path(config_path)
+        if not cfg_path.is_file():
+            raise FileNotFoundError(f"Config file not found: {cfg_path}")
+        config_dict = json.loads(cfg_path.read_text(encoding="utf-8"))
+
+    for key in (
+        "experiment_name",
+        "initialization_id",
+        "aggregation_method",
+        "cap_value",
+        "num_rounds",
+        "local_epochs",
+        "batch_size",
+        "lr",
+        "optimizer",
+        "seed",
+        "device",
+        "output_dir",
+        "patient_limit",
+        "participating_clients",
+    ):
+        cli_val = getattr(args, key, None)
+        if cli_val is not None:
+            config_dict[key] = cli_val
+
+    return FederatedConfig.from_dict(config_dict)

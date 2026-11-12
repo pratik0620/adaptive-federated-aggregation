@@ -36,7 +36,7 @@ from src.federated.adapters import (
 )
 from src.federated.aggregation import aggregate_fedavg
 from src.federated.client import FederatedClient, SyntheticFederatedClient
-from src.federated.config import FederatedConfig, create_federated_arg_parser
+from src.federated.config import FederatedConfig, create_federated_arg_parser, resolve_federated_config
 from src.federated.server import FederatedServer
 from src.models.resnet import build_resnet50_binary
 
@@ -71,36 +71,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Load external config if provided
-    config_dict: dict[str, Any] = {}
-    if args.config:
-        cfg_path = Path(args.config)
-        if not cfg_path.is_file():
-            raise FileNotFoundError(f"Config file not found: {cfg_path}")
-        config_dict = json.loads(cfg_path.read_text(encoding="utf-8"))
-
-    # CLI args override file config
-    for k in (
-        "experiment_name",
-        "initialization_id",
-        "aggregation_method",
-        "cap_value",
-        "num_rounds",
-        "local_epochs",
-        "batch_size",
-        "lr",
-        "optimizer",
-        "seed",
-        "device",
-        "output_dir",
-        "patient_limit",
-        "participating_clients",
-    ):
-        cli_val = getattr(args, k, None)
-        if cli_val is not None:
-            config_dict[k] = cli_val
-
-    fed_config = FederatedConfig.from_dict(config_dict)
+    fed_config = resolve_federated_config(args)
     set_seed(fed_config.seed)
 
     # Determine execution device
@@ -124,7 +95,6 @@ def main() -> None:
 
     out_dir = Path(fed_config.output_dir) / f"{prefix}_{timestamp}"
     fed_config.output_dir = str(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     if fed_config.participating_clients is None:
         if args.synthetic:
@@ -249,6 +219,8 @@ def main() -> None:
     if args.dry_run:
         print("\n[Dry-Run] All clients initialized successfully. Exiting without training rounds.")
         return
+
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize central server
     server = FederatedServer(

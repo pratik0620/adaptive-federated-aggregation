@@ -214,7 +214,7 @@ def test_integer_buffers_aggregated_correctly():
 # ---------------------------------------------------------------------------
 # Test 10: FederatedServer uses selected aggregation method
 # ---------------------------------------------------------------------------
-def test_federated_server_uses_capped_fedavg():
+def test_federated_server_uses_capped_fedavg(tmp_path):
     """Verify FederatedServer selects Capped FedAvg when configured."""
     model = nn.Linear(4, 1)
     c1 = SyntheticFederatedClient("c1", num_train_samples=100, input_dim=4, model=copy.deepcopy(model))
@@ -226,8 +226,9 @@ def test_federated_server_uses_capped_fedavg():
         cap_value=0.40,
         num_rounds=1,
         local_epochs=1,
+        output_dir=str(tmp_path),
     )
-    server = FederatedServer(model, clients=[c1, c2, c3], config=config)
+    server = FederatedServer(model, clients=[c1, c2, c3], config=config, output_dir=tmp_path)
 
     summary = server.run_round(1)
     weights = summary["aggregation_weights"]

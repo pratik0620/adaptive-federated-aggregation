@@ -22,8 +22,8 @@ Under standard Federated Averaging (FedAvg), aggregation weights are proportiona
 Does capping the maximum allowable aggregation weight of any single clinical institution (**Capped FedAvg**) mitigate institutional dominance and improve multi-institutional validation performance and fairness across heterogeneous healthcare nodes compared to standard **FedAvg**?
 
 ### 1.3 Hypothesis (Empirical Stance)
-We hypothesize that enforcing an upper bound $C \in [1/K, 1.0)$ on the aggregation weight:
-1. Prevents any single high-volume client from dictating global model convergence.
+We hypothesize that applying a pre-normalization clipping threshold $c \in (0, 1.0]$ to raw sample-fraction weights prior to renormalization:
+1. Attenuates the dominance of any single high-volume client over global model convergence.
 2. Improves discrimination (AUROC, PR-AUC) and balanced accuracy on partner hospitals with lower prevalence.
 3. Preserves overall global diagnostic performance without destabilizing convergence.
 
@@ -47,24 +47,20 @@ The central server updates the global parameters via:
 $$\theta_{t+1} = \sum_{k=1}^K p_k^{\text{FedAvg}} \theta_{t+1}^{(k)}$$
 
 ### 2.2 Proposed Modification: Capped FedAvg
-Let $C$ denote the maximum allowable client weight threshold, where:
+Let $c \in (0, 1.0]$ denote the pre-normalization clipping threshold applied to each client's empirical sample fraction before renormalization.
 
-$$\frac{1}{K} \le C < 1.0$$
+#### Pre-Normalization Clipping Algorithm:
+1. Compute raw sample fractions:
+   $$p_k = \frac{n_k}{\sum_{j=1}^K n_j}$$
+2. Clip each raw weight at the threshold $c$:
+   $$\tilde{p}_k = \min(p_k, c)$$
+3. Renormalize clipped weights so they sum to $1.0$:
+   $$q_k = \frac{\tilde{p}_k}{\sum_{j=1}^K \tilde{p}_j}$$
+4. Aggregate client parameters:
+   $$\theta_{t+1}^{\text{Capped}} = \sum_{k=1}^K q_k \theta_{t+1}^{(k)}$$
 
-For $K = 3$ clients, equal weighting is $1/3 \approx 0.333$. Hence, $C \in [0.34, 0.99]$. If $C = 1.0$, Capped FedAvg degenerates to standard FedAvg; if $C = 1/K$, it enforces uniform aggregation.
-
-#### Iterative Capping and Redistribution Algorithm:
-1. Compute raw weights: $p_k^{(0)} = n_k / N$.
-2. Identify clients exceeding the cap: $\mathcal{S}_{\text{capped}} = \{k : p_k^{(0)} > C\}$.
-3. If $\mathcal{S}_{\text{capped}} = \emptyset$, return $p_k^{(0)}$.
-4. Set $p_k = C$ for all $k \in \mathcal{S}_{\text{capped}}$.
-5. Compute residual mass to redistribute:
-   $$\Delta = 1.0 - \sum_{k \in \mathcal{S}_{\text{capped}}} C$$
-6. Redistribute $\Delta$ proportionally among uncapped clients $\mathcal{S}_{\text{uncapped}} = \{k : p_k^{(0)} \le C\}$:
-   $$p_k = \frac{n_k}{\sum_{j \in \mathcal{S}_{\text{uncapped}}} n_j} \cdot \Delta, \quad \forall k \in \mathcal{S}_{\text{uncapped}}$$
-7. If any newly redistributed weight exceeds $C$, repeat iteratively until all weights satisfy $0 < p_k \le C$ and $\sum_{k=1}^K p_k = 1.0$.
-
-$$\theta_{t+1}^{\text{Capped}} = \sum_{k=1}^K p_k^{\text{Capped}} \theta_{t+1}^{(k)}$$
+> [!NOTE]
+> **Pre-Normalization Clipping Semantics:** Because renormalization ($q_k = \tilde{p}_k / \sum_j \tilde{p}_j$) divides by $\sum_j \tilde{p}_j \le 1.0$, the final normalized aggregation weight $q_k$ may exceed $c$. This is the intended pre-normalization clipping formulation (distinct from iterative water-filling or strict post-normalization capping). If $c \ge \max_k p_k$ (including $c = 1.0$), Capped FedAvg degenerates to standard FedAvg; if $c \le \min_k p_k$, all clients are clipped equally and $q_k = 1/K$.
 
 ---
 
@@ -164,7 +160,7 @@ To validate the theoretical behavior of Capped FedAvg before launching multi-hou
   - **Client B (Minority / Low Prevalence):** $n_B = 100$ samples, Prevalence = $15\%$.
   - **Client C (Minority / Low Prevalence):** $n_C = 100$ samples, Prevalence = $15\%$.
 - **Weights under FedAvg:** $p_A = 0.80, p_B = 0.10, p_C = 0.10$. (Client A dominates by $8\times$).
-- **Weights under Capped FedAvg ($C = 0.50$):** $p_A = 0.50, p_B = 0.25, p_C = 0.25$.
+- **Weights under Capped FedAvg ($c = 0.50$):** Clipped weights are $\tilde{p}_A = 0.50, \tilde{p}_B = 0.10, \tilde{p}_C = 0.10$ ($\sum_j \tilde{p}_j = 0.70$), giving normalized weights $q_A = 0.50 / 0.70 \approx 0.7143$, $q_B = 0.10 / 0.70 \approx 0.1429$, $q_C = 0.10 / 0.70 \approx 0.1429$. Note that $q_A > c$ under pre-normalization clipping, while Client A's dominance is reduced relative to FedAvg.
 - **Expected Empirical Observation:**
   Under FedAvg, the global model develops a strong positive prediction bias, reducing specificity on Clients B and C. Under Capped FedAvg, balanced accuracy on Clients B and C is preserved.
 - **Reporting Label:** All synthetic runs are marked `"is_synthetic": true` and are reported in a separate synthetic verification appendix.

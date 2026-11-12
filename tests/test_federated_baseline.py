@@ -185,7 +185,7 @@ def test_handling_floating_point_parameters_and_integer_buffers():
 # ---------------------------------------------------------------------------
 # Test 5: Identical global parameters distributed to all clients
 # ---------------------------------------------------------------------------
-def test_identical_global_parameters_distributed_to_clients():
+def test_identical_global_parameters_distributed_to_clients(tmp_path):
     """Verify that the server broadcasts identical global parameter values to all clients."""
     model = nn.Sequential(nn.Linear(8, 4), nn.Linear(4, 1))
 
@@ -196,6 +196,7 @@ def test_identical_global_parameters_distributed_to_clients():
     server = FederatedServer(
         global_model=model,
         clients=[c1, c2, c3],
+        output_dir=tmp_path,
     )
 
     # Scramble client parameters before broadcasting
@@ -219,7 +220,7 @@ def test_identical_global_parameters_distributed_to_clients():
 # ---------------------------------------------------------------------------
 # Test 6: Client updates aggregated and broadcast correctly
 # ---------------------------------------------------------------------------
-def test_client_updates_aggregated_and_broadcast():
+def test_client_updates_aggregated_and_broadcast(tmp_path):
     """Verify that client parameter changes are aggregated into the global model."""
     class SimpleNet(nn.Module):
         def __init__(self):
@@ -242,7 +243,8 @@ def test_client_updates_aggregated_and_broadcast():
     server = FederatedServer(
         global_model=server_model,
         clients=[c1, c2],
-        config=FederatedConfig(num_rounds=1, local_epochs=1, lr=0.1),
+        config=FederatedConfig(num_rounds=1, local_epochs=1, lr=0.1, output_dir=str(tmp_path)),
+        output_dir=tmp_path,
     )
 
     # Initial weights are zero
@@ -297,9 +299,9 @@ def test_optimizer_reset_between_rounds():
 # ---------------------------------------------------------------------------
 # Test 8: Reproducibility with a fixed seed
 # ---------------------------------------------------------------------------
-def test_reproducibility_with_fixed_seed():
+def test_reproducibility_with_fixed_seed(tmp_path):
     """Verify identical federated training trajectories when initialized with identical seed."""
-    def run_experiment(seed: int) -> dict[str, torch.Tensor]:
+    def run_experiment(seed: int, run_dir: Path) -> dict[str, torch.Tensor]:
         torch.manual_seed(seed)
         np.random.seed(seed)
 
@@ -310,13 +312,14 @@ def test_reproducibility_with_fixed_seed():
         server = FederatedServer(
             global_model=model,
             clients=[c1, c2],
-            config=FederatedConfig(num_rounds=2, local_epochs=1, seed=seed),
+            config=FederatedConfig(num_rounds=2, local_epochs=1, seed=seed, output_dir=str(run_dir)),
+            output_dir=run_dir,
         )
         server.run_federated()
         return server.get_global_parameters()
 
-    run1_weights = run_experiment(seed=999)
-    run2_weights = run_experiment(seed=999)
+    run1_weights = run_experiment(seed=999, run_dir=tmp_path / "run1")
+    run2_weights = run_experiment(seed=999, run_dir=tmp_path / "run2")
 
     for k in run1_weights.keys():
         assert torch.equal(run1_weights[k], run2_weights[k]), (
@@ -327,7 +330,7 @@ def test_reproducibility_with_fixed_seed():
 # ---------------------------------------------------------------------------
 # Test 9: Handling of client that does not participate in a round
 # ---------------------------------------------------------------------------
-def test_non_participating_client_handling():
+def test_non_participating_client_handling(tmp_path):
     """Verify that a non-participating client does not contribute to FedAvg weights."""
     model = nn.Linear(4, 1)
     c1 = SyntheticFederatedClient("client_active_1", num_train_samples=100, input_dim=4, model=copy.deepcopy(model))
@@ -336,7 +339,8 @@ def test_non_participating_client_handling():
     server = FederatedServer(
         global_model=model,
         clients=[c1, c2, c3],
-        config=FederatedConfig(num_rounds=1, local_epochs=1),
+        config=FederatedConfig(num_rounds=1, local_epochs=1, output_dir=str(tmp_path)),
+        output_dir=tmp_path,
     )
 
     # Only client_active_1 and client_active_2 participate
