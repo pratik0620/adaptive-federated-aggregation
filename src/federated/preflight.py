@@ -1,4 +1,4 @@
-﻿"""Preflight readiness verification for federated learning experiments.
+"""Preflight readiness verification for federated learning experiments.
 
 Guarantees:
   - Exact dependency checking (torchvision, pillow, model instantiation)
@@ -51,6 +51,7 @@ class PreflightSummary:
     dependency_details: dict[str, bool]
     client_statuses: dict[str, ClientPreflightStatus]
     blockers: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def format_report(self) -> str:
         """Format preflight report into a clean tabular status summary."""
@@ -79,6 +80,10 @@ class PreflightSummary:
             )
 
         lines.append("=" * 78)
+        if self.warnings:
+            lines.append("Warnings:")
+            for w in self.warnings:
+                lines.append(f"  ! {w}")
         if not self.is_ready:
             lines.append("PREFLIGHT RESULT: FAILED - Cannot start real-data federated training.")
             lines.append("Blocking Issues:")
@@ -90,7 +95,20 @@ class PreflightSummary:
         return "\n".join(lines)
 
 
-def check_dependencies() -> tuple[bool, dict[str, bool]]:
+def check_resnet50_pretrained_cached() -> tuple[bool, Path | None]:
+    """Check whether torchvision ResNet50 ImageNet weights exist in the local torch hub cache."""
+    try:
+        from torchvision.models import ResNet50_Weights
+
+        url = ResNet50_Weights.DEFAULT.url
+        filename = Path(url.split("?")[0]).name
+        cache_path = Path(torch.hub.get_dir()) / "checkpoints" / filename
+        return cache_path.is_file(), cache_path
+    except Exception:
+        return False, None
+
+
+def check_dependencies(check_pretrained: bool = False) -> tuple[bool, dict[str, bool]]:
     """Check required packages for real-data ResNet-50 training."""
     details = {
         "torch": False,
@@ -125,6 +143,10 @@ def check_dependencies() -> tuple[bool, dict[str, bool]]:
         except Exception:
             details["resnet50_model"] = False
 
+    if check_pretrained:
+        cached, _ = check_resnet50_pretrained_cached()
+        details["resnet50_pretrained_cached"] = cached
+
     all_ok = all(details.values())
     return all_ok, details
 
@@ -133,13 +155,19 @@ def audit_client_readiness(
     client_id: str,
     repo_root: Path,
     patient_limit: int | None = None,
+    seed: int = 42,
 ) -> ClientPreflightStatus:
     """Audit dataset readiness for a single healthcare client without launching training."""
     canonical_id = client_id.lower()
 
     if "nih" in canonical_id:
         proc_dir = repo_root / "data" / "processed" / "NIH"
-        img_dir = repo_root / "data" / "raw" / "NIH" / "images"
+        search_roots = [
+            c for c in [
+                repo_root / "data" / "raw" / "NIH" / "images",
+                repo_root / "data" / "raw" / "NIH",
+            ] if c.exists()
+        ]
         if not proc_dir.is_dir():
             return ClientPreflightStatus(
                 client_id=client_id,
@@ -167,7 +195,7 @@ def audit_client_readiness(
         val_df = pd.read_csv(val_path)
         test_df = pd.read_csv(test_path)
 
-        resolver = NIHPathResolver(search_roots=[img_dir])
+        resolver = NIHPathResolver(search_roots=search_roots)
         resolver.build_index()
         if len(resolver._file_index) == 0:
             return ClientPreflightStatus(
@@ -191,12 +219,20 @@ def audit_client_readiness(
             val_df=val_df,
             test_df=test_df,
             patient_limit=patient_limit,
+            seed=seed,
             accessible_patient_ids=acc_pts,
         )
 
         res_train, _ = resolver.resolve_dataframe(sel_train, "train", filter_missing=True)
         res_val, _ = resolver.resolve_dataframe(val_df, "val", filter_missing=True)
         res_test, _ = resolver.resolve_dataframe(test_df, "test", filter_missing=True)
+
+        if len(res_train) == 0:
+            blocker = "No usable training images resolved."
+        elif len(res_val) == 0:
+            blocker = "No usable validation images resolved."
+        else:
+            blocker = None
 
         return ClientPreflightStatus(
             client_id=client_id,
@@ -208,7 +244,7 @@ def audit_client_readiness(
             usable_test_images=len(res_test),
             usable_test_patients=res_test["patient_id"].nunique() if len(res_test) > 0 else 0,
             manifest_train_rows=len(train_df),
-            blocker_reason=None if len(res_train) > 0 else "No usable training images resolved.",
+            blocker_reason=blocker,
         )
 
     elif "chexpert" in canonical_id:
@@ -274,12 +310,20 @@ def audit_client_readiness(
             val_df=val_df,
             test_df=test_df,
             patient_limit=patient_limit,
+            seed=seed,
             accessible_patient_ids=acc_pts,
         )
 
         res_train, _ = resolver.resolve_dataframe(sel_train, "train", filter_missing=True)
         res_val, _ = resolver.resolve_dataframe(val_df, "val", filter_missing=True)
         res_test, _ = resolver.resolve_dataframe(test_df, "test", filter_missing=True)
+
+        if len(res_train) == 0:
+            blocker = "No usable training images resolved."
+        elif len(res_val) == 0:
+            blocker = "No usable validation images resolved."
+        else:
+            blocker = None
 
         return ClientPreflightStatus(
             client_id=client_id,
@@ -291,7 +335,7 @@ def audit_client_readiness(
             usable_test_images=len(res_test),
             usable_test_patients=res_test["patient_id"].nunique() if len(res_test) > 0 else 0,
             manifest_train_rows=len(train_df),
-            blocker_reason=None if len(res_train) > 0 else "No usable training images resolved.",
+            blocker_reason=blocker,
         )
 
     elif "padchest" in canonical_id:
@@ -356,12 +400,20 @@ def audit_client_readiness(
             val_df=val_df,
             test_df=test_df,
             patient_limit=patient_limit,
+            seed=seed,
             accessible_patient_ids=acc_pts,
         )
 
         res_train, _ = resolver.resolve_dataframe(sel_train, "train", filter_missing=True)
         res_val, _ = resolver.resolve_dataframe(val_df, "val", filter_missing=True)
         res_test, _ = resolver.resolve_dataframe(test_df, "test", filter_missing=True)
+
+        if len(res_train) == 0:
+            blocker = "No usable training images resolved."
+        elif len(res_val) == 0:
+            blocker = "No usable validation images resolved."
+        else:
+            blocker = None
 
         return ClientPreflightStatus(
             client_id=client_id,
@@ -373,7 +425,7 @@ def audit_client_readiness(
             usable_test_images=len(res_test),
             usable_test_patients=res_test["patient_id"].nunique() if len(res_test) > 0 else 0,
             manifest_train_rows=len(train_df),
-            blocker_reason=None if len(res_train) > 0 else "No usable training images resolved.",
+            blocker_reason=blocker,
         )
 
     else:
@@ -389,6 +441,7 @@ def run_federated_preflight(
     repo_root: str | Path | None = None,
     is_synthetic: bool = False,
     abort_on_failure: bool = True,
+    require_pretrained_cache: bool = False,
 ) -> PreflightSummary:
     """Execute complete preflight readiness check before federated training.
 
@@ -413,8 +466,18 @@ def run_federated_preflight(
     root = Path(repo_root).resolve() if repo_root else Path.cwd().resolve()
     target_clients = config.participating_clients or ["client_01_NIH", "client_02_CheXpert", "client_03_PadChest"]
 
-    deps_ok, dep_details = check_dependencies()
+    deps_ok, dep_details = check_dependencies(check_pretrained=(not is_synthetic and require_pretrained_cache))
     blockers: list[str] = []
+    warnings: list[str] = []
+
+    if not is_synthetic:
+        pretrained_cached, cache_path = check_resnet50_pretrained_cached()
+        if not pretrained_cached and not require_pretrained_cache:
+            warnings.append(
+                "ResNet-50 ImageNet pretrained weights are not cached locally"
+                + (f" ({cache_path})" if cache_path else "")
+                + "; network access or pre-populating the torch hub cache is required."
+            )
 
     if not is_synthetic and not deps_ok:
         missing_deps = [d for d, ok in dep_details.items() if not ok]
@@ -441,6 +504,7 @@ def run_federated_preflight(
                 client_id=cid,
                 repo_root=root,
                 patient_limit=config.patient_limit,
+                seed=config.seed,
             )
             client_statuses[cid] = status
             if not status.is_ready:
@@ -456,6 +520,7 @@ def run_federated_preflight(
         dependency_details=dep_details,
         client_statuses=client_statuses,
         blockers=blockers,
+        warnings=warnings,
     )
 
     if not is_ready and abort_on_failure:

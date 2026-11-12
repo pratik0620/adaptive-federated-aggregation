@@ -1,4 +1,4 @@
-﻿"""Federated parameter aggregation algorithms and state validation.
+"""Federated parameter aggregation algorithms and state validation.
 
 Implements:
   1. Standard Federated Averaging (FedAvg): sample-weighted aggregation p_k = n_k / N

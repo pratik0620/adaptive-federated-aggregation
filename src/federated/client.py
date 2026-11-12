@@ -1,4 +1,4 @@
-﻿"""Federated client abstractions and dataset adapters.
+"""Federated client abstractions and dataset adapters.
 
 Enforces:
   - Local model parameter synchronization (set_parameters / get_parameters)
@@ -192,8 +192,8 @@ class FederatedClient:
         train_metrics["duration_seconds"] = duration
         train_metrics["local_epochs"] = local_epochs
 
-        # Fallback for sample_count if loader was empty
-        effective_sample_count = max(total_samples_used, self.get_sample_count())
+        # Report the actual number of training samples processed per epoch (excluding dropped partial batches)
+        effective_sample_count = total_samples_used
 
         return {
             "client_id": self.client_id,

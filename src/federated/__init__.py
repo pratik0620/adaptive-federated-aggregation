@@ -1,4 +1,4 @@
-﻿"""Federated learning baseline package for cross-silo thoracic disease prediction."""
+"""Federated learning baseline package for cross-silo thoracic disease prediction."""
 
 from .aggregation import (
     aggregate_capped_fedavg,
@@ -10,7 +10,7 @@ from .aggregation import (
     validate_client_state_dicts,
 )
 from .client import FederatedClient, SyntheticFederatedClient
-from .config import FederatedConfig, create_federated_arg_parser
+from .config import FederatedConfig, create_federated_arg_parser, resolve_federated_config
 from .server import FederatedServer
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "SyntheticFederatedClient",
     "FederatedConfig",
     "create_federated_arg_parser",
+    "resolve_federated_config",
     "aggregate_fedavg",
     "aggregate_capped_fedavg",
     "aggregate_parameters",
