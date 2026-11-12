@@ -145,7 +145,12 @@ class ClientTrainer:
 
     @torch.no_grad()
     def evaluate(self, loader: DataLoader, split_name: str = "val") -> dict[str, Any]:
-        """Evaluate model on a given DataLoader."""
+        """Evaluate model on a given DataLoader.
+
+        Returns a metrics dict where ``loss`` is ``None`` when the loader
+        has zero batches (empty split).  Callers must treat ``None`` loss as
+        *unavailable*, never as a valid score.
+        """
         self.model.eval()
         total_loss = 0.0
         all_targets: list[int] = []
@@ -163,7 +168,11 @@ class ClientTrainer:
             all_probs.extend(probs.tolist())
             all_targets.extend(targets.cpu().numpy().astype(int).tolist())
 
-        avg_loss = total_loss / max(1, len(all_targets))
+        # When the split is empty, loss is genuinely unavailable (not 0.0).
+        if len(all_targets) == 0:
+            avg_loss: float | None = None
+        else:
+            avg_loss = total_loss / len(all_targets)
         metrics = compute_binary_metrics(all_targets, all_probs)
         metrics["loss"] = avg_loss
         metrics["split"] = split_name
@@ -183,15 +192,22 @@ class ClientTrainer:
 
             # Validate
             val_metrics = self.evaluate(self.val_loader, split_name="val")
-            val_loss = val_metrics["loss"]
+            val_loss = val_metrics["loss"]   # None when val split is empty
             val_auroc = val_metrics["auroc"]
 
             # Step scheduler
             if self.scheduler is not None:
                 if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     # plateau uses val_auroc (or negative val_loss)
-                    score = val_auroc if val_auroc is not None else -val_loss
-                    self.scheduler.step(score)
+                    # val_loss is None when val split is empty; skip step
+                    if val_auroc is not None:
+                        score = val_auroc
+                    elif val_loss is not None:
+                        score = -val_loss
+                    else:
+                        score = None
+                    if score is not None:
+                        self.scheduler.step(score)
                 else:
                     self.scheduler.step()
 
@@ -217,16 +233,28 @@ class ClientTrainer:
             # Format status printout
             train_auc_str = f"{train_auroc:.4f}" if train_auroc is not None else "N/A"
             val_auc_str = f"{val_auroc:.4f}" if val_auroc is not None else "N/A"
+            val_loss_str = f"{val_loss:.4f}" if val_loss is not None else "N/A (empty val)"
             print(
                 f"Epoch [{epoch:02d}/{self.epochs:02d}] "
                 f"Train Loss: {train_loss:.4f} | Train AUROC: {train_auc_str} | "
-                f"Val Loss: {val_loss:.4f} | Val AUROC: {val_auc_str} | "
+                f"Val Loss: {val_loss_str} | Val AUROC: {val_auc_str} | "
                 f"LR: {current_lr:.2e} | Time: {epoch_duration:.1f}s"
             )
 
-            # Model selection: determine if best
-            metric_val = val_auroc if self.metric_to_optimize == "val_auroc" else -val_loss
-            if metric_val is not None and metric_val > self.best_metric_value:
+            # Model selection: determine if best.
+            # When the configured metric is unavailable (None), we must NOT
+            # fall back to training metrics or treat 0.0 as a real score.
+            if self.metric_to_optimize == "val_auroc":
+                metric_val = val_auroc  # already None when undefined
+            else:  # val_loss
+                metric_val = -val_loss if val_loss is not None else None
+
+            if metric_val is None:
+                print(
+                    f"  [WARNING] Epoch {epoch}: '{self.metric_to_optimize}' is unavailable "
+                    "(validation split is empty). best_checkpoint.pt was NOT updated."
+                )
+            elif metric_val > self.best_metric_value:
                 self.best_metric_value = metric_val
                 self.best_epoch = epoch
                 self.best_val_metrics = val_metrics
@@ -265,7 +293,10 @@ class ClientTrainer:
 
         # Check validation coverage vs official split size
         total_official_val = int(self.config.get("total_official_val_images", 5836))
-        val_evaluated_count = int(self.best_val_metrics.get("total_samples", len(self.val_loader.dataset)))
+        # best_val_metrics is empty ({}) when validation was never run
+        # (empty loader).  Fall back to 0 so coverage math is correct.
+        _val_ds_len = len(self.val_loader.dataset) if self.val_loader.dataset is not None else 0
+        val_evaluated_count = int(self.best_val_metrics.get("total_samples", _val_ds_len))
         is_official_full_val = (val_evaluated_count >= total_official_val)
         val_coverage_pct = (val_evaluated_count / total_official_val * 100.0) if total_official_val > 0 else 0.0
 
