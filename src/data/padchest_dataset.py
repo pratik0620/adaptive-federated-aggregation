@@ -300,15 +300,16 @@ def filter_padchest_frontal_views(
     if total_before == 0:
         return frame.copy(), {"total_before": 0, "frontal_count": 0, "dropped": 0}
 
-    proj_col = frame["projection"].astype(str).str.strip()
+    proj_col_raw = frame["projection"].astype(str).str.strip()
+    proj_col_upper = proj_col_raw.str.upper()
     view_col = frame["view_position"].astype(str).str.strip().str.upper() if "view_position" in frame.columns else pd.Series([""] * total_before)
 
-    valid_projections = {"PA", "AP"}
+    valid_projections_upper = {"PA", "AP"}
     if include_ap_horizontal:
-        valid_projections.add("AP_horizontal")
+        valid_projections_upper.add("AP_HORIZONTAL")
 
-    # Projection filter
-    proj_mask = proj_col.isin(valid_projections)
+    # Projection filter (case-insensitive and whitespace-stripped)
+    proj_mask = proj_col_upper.isin(valid_projections_upper)
 
     # Secondary check: ensure view_position doesn't contradict as LATERAL
     lateral_view_mask = view_col.isin(["LATERAL", "LL", "RL"])
@@ -316,9 +317,9 @@ def filter_padchest_frontal_views(
 
     filtered_df = frame[final_mask].copy().reset_index(drop=True)
 
-    lateral_count = int((proj_col == "L").sum()) + int((lateral_view_mask & (proj_col != "L")).sum())
-    costal_count = int((proj_col == "COSTAL").sum())
-    ap_horiz_dropped = int((proj_col == "AP_horizontal").sum()) if not include_ap_horizontal else 0
+    lateral_count = int((proj_col_upper == "L").sum()) + int((lateral_view_mask & (proj_col_upper != "L")).sum())
+    costal_count = int((proj_col_upper == "COSTAL").sum())
+    ap_horiz_dropped = int((proj_col_upper == "AP_HORIZONTAL").sum()) if not include_ap_horizontal else 0
     other_dropped = total_before - len(filtered_df) - lateral_count - costal_count - ap_horiz_dropped
 
     report = {
