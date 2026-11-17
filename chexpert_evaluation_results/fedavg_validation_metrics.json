@@ -1,0 +1,29 @@
+{
+  "model_name": "fedavg",
+  "display_name": "Standard FedAvg (One-Shot Aggregation)",
+  "aggregation_method": "fedavg",
+  "cap_value": null,
+  "checkpoint_filename": "fedavg_oneshot_checkpoint.pt",
+  "checkpoint_path": "D:\\DS CP\\adaptive-federated-aggregation\\outputs\\final_research_experiments\\checkpoints\\fedavg_oneshot_checkpoint.pt",
+  "research_limitation": "Exploratory post-hoc checkpoint aggregation evaluation \u2013 not a validated multi-round Federated Learning experiment.",
+  "claim_notice": "Do not claim that Capped FedAvg improves disease prediction.",
+  "dataset": "CheXpert",
+  "split_evaluated": "validation_only",
+  "total_evaluated_images": 10024,
+  "decision_threshold": 0.5,
+  "evaluation_timestamp_utc": "2026-11-17T13:00:04.488418+00:00",
+  "status": "FAILED_TO_LOAD",
+  "file_exists": false,
+  "error_type": "FileNotFoundError",
+  "error_message": "Checkpoint file 'fedavg_oneshot_checkpoint.pt' not found at 'outputs/final_research_experiments/checkpoints/fedavg_oneshot_checkpoint.pt'. File has not been deposited by the central researcher.",
+  "metrics": {
+    "auroc": null,
+    "pr_auc": null,
+    "sensitivity": null,
+    "specificity": null,
+    "precision": null,
+    "f1": null,
+    "balanced_accuracy": null,
+    "confusion_matrix": null
+  }
+}
