@@ -1,0 +1,29 @@
+{
+  "total_samples": 40,
+  "positive_count": 20,
+  "negative_count": 20,
+  "positive_fraction": 0.5,
+  "auroc": 0.71,
+  "pr_auc": 0.7250638825361533,
+  "sensitivity": 0.0,
+  "specificity": 1.0,
+  "precision": null,
+  "f1": 0.0,
+  "balanced_accuracy": 0.5,
+  "threshold": 0.5,
+  "confusion_matrix": {
+    "tn": 20,
+    "fp": 0,
+    "fn": 20,
+    "tp": 0
+  },
+  "warnings": [],
+  "loss": 0.685980761051178,
+  "split": "validation",
+  "checkpoint": "C:\\Users\\acer\\Documents\\Codex\\2026-11-17\\asking-for-the-output-which-is\\outputs\\final_research_experiments\\checkpoints\\fedavg_oneshot_checkpoint.pt",
+  "checkpoint_sha256": "3c1216ddea00340b2ce87ac0edd1f4136c5b99f80a84a70cce55727c06d1a7fe",
+  "strict_load": true,
+  "state_dict_key_count": 320,
+  "evaluation_status": "UNOFFICIAL_REAL_NIH_40_IMAGE_PILOT",
+  "research_limitation": "Exploratory cross-dataset evaluation of a post-hoc two-client aggregation; not evidence of valid multi-round federated learning."
+}
