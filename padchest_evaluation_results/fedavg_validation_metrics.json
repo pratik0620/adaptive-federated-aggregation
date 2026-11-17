@@ -1,0 +1,23 @@
+{
+  "model_name": "fedavg",
+  "checkpoint_path": "outputs\\final_research_experiments\\checkpoints\\fedavg_oneshot_checkpoint.pt",
+  "evaluation_timestamp_utc": "2026-11-17T12:31:34.244240+00:00",
+  "task": "binary_classification_pleural_effusion",
+  "client_id": "client_03_PadChest",
+  "evaluation_split": "validation",
+  "research_limitation_notice": "Exploratory post-hoc checkpoint aggregation evaluation \u2013 not a validated multi-round Federated Learning experiment.",
+  "dataset_coverage_notice": "PARTIAL_ARCHIVE_SUBSET_UNOFFICIAL: Evaluated on available partial archive download (e.g. 0.zip and 1.zip). Metrics represent partial local data coverage, not official full benchmark.",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python_version": "3.14.7",
+    "torch_version": "2.14.1+cpu",
+    "device": "cpu"
+  },
+  "checkpoint_loading": {
+    "file_exists": false,
+    "status": "FAILED_FILE_NOT_FOUND",
+    "error": "Checkpoint file not found at: C:\\Users\\surab\\OneDrive\\Documents\\SEM 5\\Data Science MDM\\adaptive-federated-aggregation\\outputs\\final_research_experiments\\checkpoints\\fedavg_oneshot_checkpoint.pt. The aggregated checkpoint was not placed in the workspace or shared via Git (due to .gitignore exclusion of binary .pt models)."
+  },
+  "dataset_audit": {},
+  "metrics": null
+}

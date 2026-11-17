@@ -1,0 +1,67 @@
+{
+  "model_name": "local_padchest_reference",
+  "checkpoint_path": "outputs\\padchest\\padchest_partial_resnet50\\best_checkpoint.pt",
+  "evaluation_timestamp_utc": "2026-11-17T12:35:50.041295+00:00",
+  "task": "binary_classification_pleural_effusion",
+  "client_id": "client_03_PadChest",
+  "evaluation_split": "validation",
+  "research_limitation_notice": "Exploratory post-hoc checkpoint aggregation evaluation \u2013 not a validated multi-round Federated Learning experiment.",
+  "dataset_coverage_notice": "PARTIAL_ARCHIVE_SUBSET_UNOFFICIAL: Evaluated on available partial archive download (e.g. 0.zip and 1.zip). Metrics represent partial local data coverage, not official full benchmark.",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python_version": "3.14.7",
+    "torch_version": "2.14.1+cpu",
+    "device": "cpu"
+  },
+  "checkpoint_loading": {
+    "file_exists": true,
+    "status": "LOAD_SUCCESS",
+    "error": null,
+    "metadata": {
+      "epoch": 1,
+      "best_val_metric": 0.780365296803653,
+      "metric_name": "val_auroc",
+      "model_architecture": "resnet50",
+      "num_classes": 1,
+      "state_dict_keys": 320
+    }
+  },
+  "dataset_audit": {
+    "raw_val_rows": 6090,
+    "frontal_val_rows": 4321,
+    "accessible_val_rows": 161,
+    "missing_val_rows": 4160,
+    "accessible_fraction": 0.0372598935431613,
+    "coverage_percentage": 3.7259893543161304,
+    "is_complete_benchmark": false,
+    "dataset_status": "PARTIAL_ARCHIVE_SUBSET",
+    "class_distribution": {
+      "positive": 15,
+      "negative": 146,
+      "prevalence": 0.09316770186335403
+    },
+    "unique_patients": 155
+  },
+  "metrics": {
+    "total_samples": 161,
+    "positive_count": 15,
+    "negative_count": 146,
+    "positive_fraction": 0.09316770186335403,
+    "auroc": 0.780365296803653,
+    "pr_auc": 0.23139295521350764,
+    "sensitivity": 0.0,
+    "specificity": 1.0,
+    "precision": null,
+    "f1": 0.0,
+    "balanced_accuracy": 0.5,
+    "threshold": 0.5,
+    "confusion_matrix": {
+      "tn": 146,
+      "fp": 0,
+      "fn": 15,
+      "tp": 0
+    },
+    "warnings": []
+  },
+  "confusion_matrix_image": "local_padchest_reference_confusion_matrix.png"
+}
