@@ -1,0 +1,57 @@
+================================================================================
+CHEXPERT CLIENT: EXECUTION ENVIRONMENT & COMMAND AUDIT LOG
+Project: Adaptive Federated Aggregation Algorithm for Disease Prediction using Heterogeneous Healthcare Data
+Date: 2026-11-17 13:00:04 UTC
+================================================================================
+
+1. EXECUTION ENVIRONMENT DETAILS
+--------------------------------------------------------------------------------
+Operating System:            Windows-11-10.0.26300-SP0
+Python Executable:           D:\DS CP\adaptive-federated-aggregation\.venv\Scripts\python.exe
+Python Version:              3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]
+PyTorch Version:             2.13.0+cu130
+CUDA Available:              True
+CUDA Version (PyTorch):      13.0
+GPU Device:                  NVIDIA GeForce RTX 4050 Laptop GPU
+Target Inference Device:     cuda
+
+2. EVALUATION DATASET CONFIGURATION
+--------------------------------------------------------------------------------
+Dataset Split:               Validation split ONLY (data/processed/CheXpert/val.csv)
+Frontal Filter:              AP and PA views only (lateral/costal excluded)
+Total Resolved Images:       10,024
+Decision Threshold:          0.50 (Standard fixed benchmark threshold)
+Test Split Isolation:        STRICT ENFORCEMENT. test.csv was NEVER read or loaded.
+
+3. CHECKPOINT LOCATION AUDIT
+--------------------------------------------------------------------------------
+Target Directory:            outputs/final_research_experiments/checkpoints/
+Directory Exists on Disk:    False
+
+Target Checkpoint 1:         outputs/final_research_experiments/checkpoints/fedavg_oneshot_checkpoint.pt
+  - File Exists:             False
+  - Load Status:             FAILED_TO_LOAD
+  - Details:                 Checkpoint file 'fedavg_oneshot_checkpoint.pt' not found at 'outputs/final_research_experiments/checkpoints/fedavg_oneshot_checkpoint.pt'. File has not been deposited by the central researcher.
+
+Target Checkpoint 2:         outputs/final_research_experiments/checkpoints/capped_fedavg_c40_oneshot_checkpoint.pt
+  - File Exists:             False
+  - Load Status:             FAILED_TO_LOAD
+  - Details:                 Checkpoint file 'capped_fedavg_c40_oneshot_checkpoint.pt' not found at 'outputs/final_research_experiments/checkpoints/capped_fedavg_c40_oneshot_checkpoint.pt'. File has not been deposited by the central researcher.
+
+4. EXACT REPRODUCIBLE COMMANDS USED
+--------------------------------------------------------------------------------
+# Command executed from repository root:
+D:\DS CP\adaptive-federated-aggregation\.venv\Scripts\python.exe scripts/evaluate_aggregated_checkpoints.py --output_dir chexpert_evaluation_results
+
+# Command to verify CheXpert validation diagnostic baseline:
+D:\DS CP\adaptive-federated-aggregation\.venv\Scripts\python.exe scripts/chexpert_client02_validation_diagnostic.py
+
+# Command to inspect outputs and checkpoint status:
+powershell -NoProfile -Command "Get-ChildItem -Path 'outputs' -Recurse"
+
+5. RESEARCH INTEGRITY & PROTOCOL NOTICE
+--------------------------------------------------------------------------------
+Exploratory post-hoc checkpoint aggregation evaluation – not a validated multi-round Federated Learning experiment.
+Do not claim that Capped FedAvg improves disease prediction.
+No metrics were fabricated for absent checkpoints.
+================================================================================
