@@ -1,0 +1,27 @@
+NIH VALIDATION-ONLY CHECKPOINT EVALUATION
+Date: 2026-11-17 (Asia/Calcutta)
+Repository commit: 8ed909d63f521e4389cdaa6329b1783253935197
+Platform: Windows-11-10.0.26300-SP0
+Python: 3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]
+PyTorch: 2.9.1+cpu
+CUDA available: False
+Device: CPU
+Validation images: 40
+Positive labels: 20
+Negative labels: 20
+Threshold: 0.5 (fixed)
+
+Exact command:
+py -3.13 work\evaluate_nih_aggregated.py
+
+Pipeline interfaces used:
+- src.data.nih_dataset.NIHChestXRayDataset
+- src.data.nih_dataset.get_nih_transforms(split="val", img_size=224)
+- src.models.resnet.build_resnet50_binary(pretrained=False)
+- src.models.resnet.load_checkpoint(..., strict=True)
+- src.metrics.compute_binary_metrics(..., threshold=0.5)
+
+Safeguards:
+- Validation rows only; no test dataframe or test loader read.
+- No optimizer, backward pass, training loop, or state-dict modification.
+- Identical deterministic loader and sample order for both checkpoints.
