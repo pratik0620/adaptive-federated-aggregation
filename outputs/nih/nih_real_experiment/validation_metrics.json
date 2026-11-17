@@ -1,0 +1,31 @@
+{
+  "total_samples": 40,
+  "positive_count": 20,
+  "negative_count": 20,
+  "positive_fraction": 0.5,
+  "auroc": 0.7225,
+  "pr_auc": 0.7488296565870096,
+  "sensitivity": 1.0,
+  "specificity": 0.15,
+  "precision": 0.5405405405405406,
+  "f1": 0.7017543859649124,
+  "balanced_accuracy": 0.575,
+  "threshold": 0.5,
+  "confusion_matrix": {
+    "tn": 3,
+    "fp": 17,
+    "fn": 0,
+    "tp": 20
+  },
+  "warnings": [
+    "UNOFFICIAL 200-image pilot subset; not a full NIH validation benchmark."
+  ],
+  "loss": 0.6658196210861206,
+  "split": "val",
+  "is_official_full_val": false,
+  "evaluated_samples": 40,
+  "total_official_split_samples": 5836,
+  "coverage_percentage": 0.685401,
+  "missing_samples_count": 5796,
+  "evaluation_status": "PILOT_SUBSET_UNOFFICIAL"
+}

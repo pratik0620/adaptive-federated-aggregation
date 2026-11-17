@@ -1,0 +1,9 @@
+{
+  "architecture": "ResNet50Binary",
+  "central_checkpoint_available": false,
+  "initialization": "ImageNet pretrained torchvision ResNet-50",
+  "best_checkpoint_sha256": "a3e497cab54a06e338d6755ed6380ad8ab55b9860af7e1bbda16cb211acf58c1",
+  "final_checkpoint_sha256": "541adcd226ea778cdc605f900180fbcfd4852201449b3caca89bb698a8743072",
+  "state_dict_key_count": 320,
+  "federated_compatible": true
+}

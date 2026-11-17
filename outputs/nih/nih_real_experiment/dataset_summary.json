@@ -1,0 +1,37 @@
+{
+  "dataset": "NIH ChestX-ray14",
+  "metadata_filename": "Data_Entry_2017_v2020.csv",
+  "metadata_sha256": "dc1d2df67fdc1c5a7601d48699cda2b13dc2c4841488b4183dcf04884dbaca11",
+  "metadata_rows": 112120,
+  "pilot_images": 200,
+  "pilot_patients": 200,
+  "label_policy": "Effusion token present in Finding Labels = 1; otherwise = 0; no uncertain label exists in NIH metadata",
+  "image_transfer_source": "Public NIH ChestX-ray14 224x224 mirror at nih-chest-x-rays.s3.us-east-2.amazonaws.com",
+  "patient_overlap_across_splits": 0,
+  "split_summary": [
+    {
+      "split": "train",
+      "patients": 120,
+      "images": 120,
+      "positive": 60,
+      "negative": 60,
+      "effusion_prevalence": 0.5
+    },
+    {
+      "split": "validation",
+      "patients": 40,
+      "images": 40,
+      "positive": 20,
+      "negative": 20,
+      "effusion_prevalence": 0.5
+    },
+    {
+      "split": "test",
+      "patients": 40,
+      "images": 40,
+      "positive": 20,
+      "negative": 20,
+      "effusion_prevalence": 0.5
+    }
+  ]
+}

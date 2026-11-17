@@ -1,0 +1,23 @@
+{
+  "experiment": "NIH ChestX-ray14 real-data 200-image pilot",
+  "architecture": "ResNet50Binary",
+  "input_size": [
+    224,
+    224
+  ],
+  "normalization": "ImageNet mean/std",
+  "target": "Effusion",
+  "epochs": 3,
+  "batch_size": 8,
+  "lr": 0.0001,
+  "weight_decay": 0.0001,
+  "optimizer": "adamw",
+  "scheduler": "cosine",
+  "loss": "BCEWithLogitsLoss",
+  "pos_weight": 1.0,
+  "seed": 42,
+  "pretrained": true,
+  "initialization": "ImageNet pretrained; central checkpoint absent",
+  "classification_threshold": 0.5,
+  "subset_policy": "Exactly 200 real images, one per patient, balanced 50/50 per split"
+}
