@@ -1,59 +1,88 @@
-# Adaptive Federated Aggregation Algorithm for Disease Prediction using Heterogeneous Healthcare Data
+# Adaptive Federated Aggregation for Disease Prediction using Heterogeneous Healthcare Data
 
-This repository prepares three public chest X-ray metadata sources as separate, leakage-safe federated clients. It does not train a model, implement FedAvg/FedProx, or redistribute medical images.
+A federated learning framework for binary disease classification (**Pleural Effusion**) across multi-institutional chest radiograph datasets (**NIH ChestX-ray14**, **CheXpert**, and **PadChest**).
 
-## Objective
+This project investigates institutional sample volume disparity and disease prevalence skew in healthcare federations, introducing **Capped FedAvg** to mitigate client dominance while preserving global model convergence.
 
-The current clean binary experiment targets `Pleural Effusion`. A target can be changed in notebook configuration without rewriting the pipeline. Positive means the verified target label is present; negative means an explicitly clean negative label is present. Uncertain, missing, mixed, and otherwise ambiguous cases are excluded rather than silently treated as negative.
+---
 
-## Datasets and access
+## 📌 Problem & Motivation
 
-- NIH ChestX-ray14: obtain the images and metadata from the official NIH source.
-- CheXpert: obtain the dataset and access terms from Stanford ML Group.
-- PadChest: obtain the metadata/images from the official BCN/AQUA repository and verify its current terms.
+In cross-silo healthcare federations, participating institutions exhibit severe heterogeneity along two primary axes:
+- **Sample Volume Disparity:** Major medical centers dwarf regional facilities in patient volume. Under standard Federated Averaging (FedAvg), aggregation weights are strictly proportional to sample size ($p_k \propto n_k$), allowing oversized nodes to dominate global model updates.
+- **Institutional Prevalence Skew:** Disease incidence strongly reflects local clinical workflows (e.g., inpatient ICU cohorts vs. outpatient screening), inducing severe label distribution shifts across clients.
 
-Access, download, and usage restrictions remain the user's responsibility. This repository contains preprocessing code and metadata structure only. Never commit downloaded images, archives, or restricted source files.
+---
 
-## Repository structure
+## ⚙️ Methodology: Capped FedAvg
+
+**Capped FedAvg** introduces an adaptive pre-normalization threshold $c \in (0, 1]$ to bound individual client influence, followed by mass renormalization:
+
+1. **Empirical Client Proportion:**
+   $$p_k = \frac{n_k}{\sum_{j=1}^K n_j}$$
+2. **Clipped Proportion:**
+   $$\tilde{p}_k = \min(p_k, c)$$
+3. **Renormalized Aggregation Weight:**
+   $$q_k = \frac{\tilde{p}_k}{\sum_{j=1}^K \tilde{p}_j}$$
+4. **Global Parameter Aggregation:**
+   $$\theta_{t+1} = \sum_{k=1}^K q_k \theta_{t+1}^{(k)}$$
+
+*When $c \ge \max_k(p_k)$, the algorithm identically recovers standard FedAvg. When $c < \max_k(p_k)$, the dominant client's update weight is clipped at $c$, and the excess mass is redistributed proportionally to minority clinical partners.*
+
+---
+
+## 🏗️ Model Architecture & Parity
+
+To ensure performance differences stem strictly from aggregation dynamics rather than architectural divergence:
+- **Backbone:** ResNet-50 (`torchvision.models.resnet50`, 23.51M parameters, 320 state dictionary tensors).
+- **Classification Head:** Linear projection head ($\mathbf{w} \in \mathbb{R}^{2048}, b \in \mathbb{R}$) predicting a single logit.
+- **Input Preprocessing:** $224 \times 224 \times 3$ RGB radiographs with standard ImageNet normalization constants ($\mu = [0.485, 0.456, 0.406]$, $\sigma = [0.229, 0.224, 0.225]$).
+- **Optimization:** AdamW optimizer with Binary Cross-Entropy with Logits (`nn.BCEWithLogitsLoss`).
+
+---
+
+## 📁 Repository Structure
 
 ```text
-src/
-  config.py
-  dataset_utils.py
-  preprocessing_utils.py
-notebooks/
-  01_NIH_preprocessing.ipynb
-  02_CheXpert_preprocessing.ipynb
-  03_PadChest_preprocessing.ipynb
-  04_validate_federated_dataset.ipynb
+├── configs/               # Client and federated training configurations
+├── notebooks/             # Data preprocessing, label standardization & leakage audits
+├── scripts/               # Synthetic federated simulation and diagnostic runners
+├── src/
+│   ├── config.py          # Central project configuration and hyperparameter schemas
+│   ├── data/              # Client dataset loaders, samplers, and path resolvers
+│   ├── federated/         # Aggregation algorithms (FedAvg, Capped FedAvg), client & server logic
+│   ├── models/            # ResNet-50 binary classification architecture
+│   └── trainer.py         # Standardized local client training pipeline
+└── tests/                 # Comprehensive test suite (91 pytest test cases)
 ```
 
-Each preprocessing notebook writes metadata CSVs to a separate directory under `data/processed/`:
-`data/processed/NIH`, `data/processed/CheXpert`, and `data/processed/PadChest`. The `image_path` column points to the original mounted image; files are not copied.
+---
 
-## Google Colab
+## 🚀 Quickstart
 
-1. Open a notebook in Colab and mount Google Drive if the data is stored there.
-2. Clone this repository, or upload the repository files, and change the configuration paths in the first code cell.
-3. Install dependencies:
-
-```python
-%pip install -r requirements.txt
+### 1. Environment Setup
+```bash
+git clone https://github.com/<your-username>/<repo-name>.git
+cd <repo-name>
+pip install -r requirements.txt
 ```
 
-4. Run the notebook from top to bottom. Set `PROJECT_ROOT` to the cloned repository and use `pathlib.Path` for dataset paths.
-5. Run the validation notebook after all three client directories exist.
+### 2. Run Test Suite
+Verify model parity, aggregation math, and pipeline invariants:
+```bash
+python -m pytest tests/
+```
 
-The notebooks do not download restricted datasets. They raise an actionable error when a configured metadata file or image directory is missing.
+### 3. Run Synthetic Federated Benchmark
+Execute the controlled multi-round simulation comparing standard FedAvg against Capped FedAvg across cap thresholds ($c \in [0.30, 0.60]$):
+```bash
+python scripts/run_synthetic_demonstration.py
+```
 
-## Leakage and reproducibility
+---
 
-Splits are made at patient level with seed `42`; no patient can appear in more than one split. Study-level overlap is checked where study IDs exist. Counts are reported before filtering and sampling. Sampling is optional through `MAX_POSITIVE_SAMPLES` and `MAX_NEGATIVE_SAMPLES`, both defaulting to `None`.
+## 🔒 Privacy & Data Ethics
 
-## Standardized client schema
-
-All clients contain `image_id`, `patient_id`, `study_id`, `source`, `target`, `age`, `sex`, `view_position`, `projection`, `image_width`, `image_height`, `pixel_spacing_x`, `pixel_spacing_y`, `scanner_manufacturer`, and `image_path`. Dataset-specific metadata may be retained as additional columns. Missing source fields remain `NaN`.
-
-## Dataset-specific verification
-
-Before a real run, verify the exact local column names and label spelling in each downloaded release. PadChest label vocabularies and serialized list formatting require explicit inspection; the notebook prints matching vocabulary examples and stops if the requested target label is not found. NIH official split information is not assumed because releases may differ; patient-level deterministic splits are used unless an official split mapping is supplied.
+This repository adheres to strict privacy standards for decentralized clinical AI:
+- **Zero Raw Data Exchange:** Medical institutions never share raw patient radiographs or protected health information (PHI). Only model weights ($\theta^{(k)}$) and sample counts ($n_k$) are communicated.
+- **No Tracked Datasets:** Raw DICOM/PNG images and proprietary model checkpoints are excluded from version control.
