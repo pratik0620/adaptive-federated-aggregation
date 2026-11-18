@@ -32,3 +32,6 @@ venv/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+
+# Reseach paper
+Research_Paper/
