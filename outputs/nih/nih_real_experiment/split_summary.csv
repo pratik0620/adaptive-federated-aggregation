@@ -1,4 +1,0 @@
-split,patients,images,positive,negative,effusion_prevalence
-train,120,120,60,60,0.5
-validation,40,40,20,20,0.5
-test,40,40,20,20,0.5

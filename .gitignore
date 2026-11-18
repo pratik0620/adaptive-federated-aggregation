@@ -1,37 +1,135 @@
-# Medical images and downloaded archives
-*.jpg
-*.jpeg
-*.png
-*.dcm
-*.zip
-*.tar
-*.gz
+# ==============================================================================
+# Byte-compiled / optimized / Python caches & temporary files
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Local datasets and mounts
+# Pytest and testing artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# ==============================================================================
+# Local Environment & Configuration Files
+# ==============================================================================
+.env
+.env.*
+!.env.example
+*.local
+
+# IDE and Editor settings
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==============================================================================
+# Datasets and Local Mounts
+# ==============================================================================
 /data/
 !src/data/
 datasets/
 Google Drive/
 /content/
 
-# Generated outputs and training artifacts
+# Medical imaging raw files
+*.dcm
+*.dicom
+
+# Raw image files
+*.jpg
+*.jpeg
+*.png
+
+# ==============================================================================
+# Archives & Compressed Files (including evaluation result bundles)
+# ==============================================================================
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
+*_results*.zip
+*evaluation*.zip
+
+# ==============================================================================
+# Generated Outputs, Checkpoints & Training Artifacts
+# ==============================================================================
+outputs/
 checkpoints/
 /models/
 !src/models/
 logs/
-outputs/
+*.log
+runs/
+wandb/
+lightning_logs/
+
+# Model weights and checkpoint formats
 *.pt
 *.pth
 *.ckpt
+*.bin
 *.onnx
 *.safetensors
+*.joblib
+*.pkl
+*.pickle
+*.h5
 
-# Python environments and caches
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-.ipynb_checkpoints/
-
-# Reseach paper
+# ==============================================================================
+# Research Paper Drafts / Large Docs
+# ==============================================================================
 Research_Paper/
